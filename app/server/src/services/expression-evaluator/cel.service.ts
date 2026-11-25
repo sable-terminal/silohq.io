@@ -12,7 +12,7 @@
 // Values: CEL integers are BigInt. Inputs are converted (integral numbers to BigInt) and
 // results converted back; an integer beyond 2^53 is refused rather than rounded.
 
-import { Environment } from '@marcbachmann/cel-js';
+import { Environment, serialize, type ASTNode } from '@marcbachmann/cel-js';
 import { AppError } from '../../utils/errors.util.ts';
 import {
   base64, base64Decode, base64url, canonicalQuery, epochMillis, epochSeconds, hex, hmacSha256, httpDate, parseLinkHeader, rfc3339,
@@ -104,8 +104,8 @@ export interface CompiledCel {
   evaluate(activation: Record<string, unknown>, bounds: CelBounds): unknown;
 }
 
-/** Parses and type checks against the declared inputs. Throws AppError validation with the library's code. */
-export function compileCel(source: string, inputs: Readonly<Record<string, CelType>>): CompiledCel {
+/** Parsed and type checked against the declared inputs, or AppError validation with the library's code. */
+function parsed(source: string, inputs: Readonly<Record<string, CelType>>): ReturnType<Environment['parse']> {
   // A regular expression runs in one native call, beyond the meter's reach: a pattern that
   // backtracks could hold the process. CEL's matches() is therefore not available.
   if (/\bmatches\s*\(/.test(source)) {
@@ -123,6 +123,25 @@ export function compileCel(source: string, inputs: Readonly<Record<string, CelTy
   }
   const checked = program.check();
   if (!checked.valid) throw invalid(checked.error, 'type');
+  return program;
+}
+
+export type CelNode = ASTNode;
+
+/**
+ * An expression's checked syntax tree, for a caller that reads its shape rather than running it
+ * (a Studio set's filter made typed filters, spec 37.8). Parsed and checked as compileCel does.
+ */
+export function celTree(source: string, inputs: Readonly<Record<string, CelType>>): CelNode {
+  return parsed(source, inputs).ast;
+}
+
+/** A node of a tree written back as CEL source. */
+export const celSource = (node: CelNode): string => serialize(node);
+
+/** Parses and type checks against the declared inputs. Throws AppError validation with the library's code. */
+export function compileCel(source: string, inputs: Readonly<Record<string, CelType>>): CompiledCel {
+  const program = parsed(source, inputs);
   return {
     evaluate(activation, bounds) {
       const meter: Meter = { steps: 0, budget: bounds.steps, deadline: performance.now() + bounds.timeMs };

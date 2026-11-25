@@ -15,12 +15,18 @@
 // vocabulary's names, with the values written in the question and filters naming the
 // records. Compile checks it against the reader's vocabulary as it checks a plan; the
 // records it changes become a plan that finds them.
+//
+// Where the caller allows it (Ask's harder question, 37.8), the model may answer with an analysis:
+// an ordered chain of typed steps in the vocabulary's names, each reading earlier steps by
+// position. Compile checks every name as it checks a plan, the question's literals become the
+// chain's parameters, and the chain is kept and charged as an advanced compile.
 
 import { z } from 'zod';
+import { MAX_STEPS, type AnalysisStepInput } from '../../contracts/compile/analysis.contract.ts';
 import { FILTER_OPS } from '../../contracts/connect/manifest.contract.ts';
 import {
   CALENDAR_UNITS, MEASURE_FUNCTIONS, PLAN_SCHEMA_VERSION, queryPlan, TO_DATE_UNITS, TRAILING_UNITS,
-  type Clarification, type PlanParameters, type QueryPlan, type QueryPlanInput, type Refusal,
+  type Clarification, type PlanFilter, type PlanParameters, type PlanPeriod, type QueryPlan, type QueryPlanInput, type Refusal,
 } from '../../contracts/planner/plan.contract.ts';
 import type { PropertyAccess, ReaderAccess, TypeAccess } from '../planner/access.service.ts';
 import { interfaceRoots, routeName } from './vocabulary.service.ts';
@@ -81,6 +87,31 @@ export const modelIntentSchema = z.object({
   filters: z.array(modelFilter).max(20).optional(),
 });
 
+const position = z.int().min(1).max(MAX_STEPS);
+const alias = z.string().regex(/^[a-z][a-z0-9_]{0,62}$/);
+const modelMeasure = z.object({ fn: z.enum(MEASURE_FUNCTIONS), property: z.string().max(200).optional(), as: alias });
+const modelKey = z.object({ property: z.string().max(200), bucket: z.enum(CALENDAR_UNITS).optional() });
+const modelConditions = { filters: z.array(modelFilter).max(20).optional(), period: modelPeriod.optional() };
+
+/** One step of a chain (37.8), in the vocabulary's names, reading earlier steps by position (from 1). */
+export const modelStepSchema = z.discriminatedUnion('operation', [
+  /** A fresh set of a type, or an earlier set narrowed: one of objectType and input. */
+  z.object({ operation: z.literal('filter'), objectType: z.string().max(200).optional(), input: position.optional(), ...modelConditions }),
+  z.object({ operation: z.literal('traverse'), input: position, link: z.string().max(200), route: z.string().max(200).optional(), ...modelConditions }),
+  z.object({ operation: z.literal('derive'), input: position, properties: z.array(z.string().max(200)).min(1).max(10) }),
+  z.object({ operation: z.literal('group'), input: position, groupBy: z.array(modelKey).max(5).optional(), measures: z.array(modelMeasure).min(1).max(20) }),
+  z.object({ operation: z.literal('time_series'), input: position, property: z.string().max(200), unit: z.enum(CALENDAR_UNITS), measures: z.array(modelMeasure).min(1).max(20) }),
+  z.object({ operation: z.literal('pivot'), input: position, rows: z.string().max(200), columns: z.string().max(200), measure: modelMeasure }),
+  z.object({ operation: z.literal('compare'), inputs: z.array(position).min(2).max(2), groupBy: z.array(modelKey).max(2).optional(), measures: z.array(modelMeasure).min(1).max(20) }),
+  /** The objects behind one group of a group, time series or pivot step: its key, with values written in the question. */
+  z.object({
+    operation: z.literal('select'), input: position,
+    key: z.array(z.object({ property: z.string().max(200), value: literal.nullable(), to: literal.optional() })).min(1).max(5),
+  }),
+]);
+export type ModelStep = z.infer<typeof modelStepSchema>;
+const analysisOutcome = z.object({ outcome: z.literal('analysis'), steps: z.array(modelStepSchema).min(2).max(MAX_STEPS) });
+
 const outcomes = [
   z.object({ outcome: z.literal('plan'), plan: modelPlanSchema }),
   z.object({ outcome: z.literal('clarification'), about: z.enum(['object_type', 'property']), options: z.array(z.string().max(200)).min(2).max(10) }),
@@ -93,7 +124,12 @@ export const modelOutputWithIntentSchema = z.discriminatedUnion('outcome', [
   /** A Cron asked for (36.4, 40): how often and when, in words; compile writes the schedule. */
   z.object({ outcome: z.literal('schedule'), schedule: modelScheduleSchema }),
 ]);
-export type ModelOutput = z.infer<typeof modelOutputWithIntentSchema>;
+/** Where the caller allows a chain too (Ask's harder question, 37.8). */
+export const modelOutputWithChainSchema = z.discriminatedUnion('outcome', [...outcomes, analysisOutcome]);
+export const modelOutputWithIntentAndChainSchema = z.discriminatedUnion('outcome', [
+  ...modelOutputWithIntentSchema.options, analysisOutcome,
+]);
+export type ModelOutput = z.infer<typeof modelOutputWithIntentAndChainSchema>;
 
 /** The task, constant text: names only, no data. */
 export const INSTRUCTIONS = [
@@ -122,6 +158,17 @@ export const INTENT_INSTRUCTIONS = [
   'differs_from_previous, count_above or count_below with the threshold), whether to notify or send a report, and the asker\'s words. Never write a cron expression.',
 ].join('\n');
 
+/** Added where a chain may be the answer (Ask's harder question, 37.8). */
+export const CHAIN_INSTRUCTIONS = [
+  'When one plan cannot answer the question because it needs steps in sequence (a set narrowed, the objects linked to it followed, grouped, one group taken back to its objects,',
+  'a series over time, a pivot, or two sets compared), answer with outcome analysis: an ordered list of steps, each reading earlier steps by their position, from 1.',
+  'filter makes a fresh set of objectType, or narrows the set of an earlier step (input), with filters and a period. traverse follows a named link from the set of an earlier step,',
+  'with filters on the objects it reaches. derive adds computed properties to a set. group counts or measures a set, by properties (a time field may take a bucket).',
+  'time_series measures a set by a time field in a unit. pivot measures a set by two properties. compare measures two earlier sets of one type, each counted separately.',
+  'select takes the objects behind one group of a group, time_series or pivot step, by that group\'s key with the values written in the question (a bucket by its start and the next period\'s start).',
+  'A group, time_series, pivot or compare makes a result: only select reads a result. Use analysis only when a single plan cannot answer the question.',
+].join('\n');
+
 const refuse = (code: string, reason: string, extra: Partial<Refusal> = {}): Refusal => ({ code, reason, ...extra });
 
 /** An intent over ids (42.9): the values are the asker's own words, record values kept as the plan's parameters are. */
@@ -135,7 +182,9 @@ export interface TranslatedIntent {
 }
 
 export type Translated = { plan: QueryPlan; parameters: PlanParameters } | { refusal: Refusal } | { clarification: Clarification } | { intent: TranslatedIntent }
-  | { schedule: TranslatedSchedule };
+  | { schedule: TranslatedSchedule }
+  /** A chain (37.8): typed steps over ids, values as the chain's parameters. */
+  | { chain: { steps: AnalysisStepInput[]; parameters: PlanParameters } };
 
 function typeByName(access: ReaderAccess, name: string): TypeAccess | undefined {
   const types = [...access.types.values()];
@@ -163,6 +212,7 @@ export interface Chosen { about: 'object_type' | 'time_field' | 'route' | 'prope
 /** Turns the model's output into a plan over ids, or a clarification, or a refusal. */
 export function translate(output: ModelOutput, access: ReaderAccess, chosen?: Chosen): Translated {
   if (output.outcome === 'intent') return translateIntent(output.intent, access, chosen);
+  if (output.outcome === 'analysis') return translateChain(output.steps, access, chosen);
   if (output.outcome === 'schedule') {
     const translated = translateSchedule(output.schedule);
     return 'code' in translated ? { refusal: translated } : { schedule: translated };
@@ -230,49 +280,12 @@ export function translate(output: ModelOutput, access: ReaderAccess, chosen?: Ch
 
   const planNodes: QueryPlanInput['nodes'] = [];
   for (const [i, n] of m.nodes.entries()) {
-    const filters = [];
-    for (const f of n.filters ?? []) {
-      const p = prop(i, f.property);
-      if (isRefusal(p)) return { refusal: p };
-      const needsValue = f.op !== 'is_null' && f.op !== 'is_not_null';
-      if (needsValue && f.value === undefined) return { refusal: refuse('compile.filter_value_missing', `a filter on ${p.property.apiName} has no value`, { element: { kind: 'property', id: p.property.identityId, name: p.property.apiName } }) };
-      filters.push({ property: p.property.identityId, op: f.op, ...(needsValue ? { value: param(f.value!) } : {}) });
-    }
-    let period: QueryPlanInput['nodes'][number]['period'];
-    if (n.period !== undefined) {
-      const t = nodes[i]!;
-      const visibleTimes = t.type.timeFields.filter((f) => t.properties.has(f.propertyIdentityId));
-      let fieldId: string | undefined;
-      if (n.period.property !== undefined) {
-        const p = prop(i, n.period.property);
-        if (isRefusal(p)) return { refusal: p };
-        if (!visibleTimes.some((f) => f.propertyIdentityId === p.property.identityId)) {
-          return { refusal: refuse('compile.period_field', `${p.property.apiName} is not a declared time field of ${t.type.displayName}`, { element: { kind: 'time_field', id: p.property.identityId, name: p.property.apiName } }) };
-        }
-        fieldId = p.property.identityId;
-      } else {
-        const fallback = (chosen?.about === 'time_field' ? visibleTimes.find((f) => f.propertyIdentityId === chosen.elementId) : undefined)
-          ?? visibleTimes.find((f) => f.isDefault) ?? (visibleTimes.length === 1 ? visibleTimes[0] : undefined);
-        if (fallback === undefined && visibleTimes.length > 1) {
-          return {
-            clarification: {
-              about: 'time_field', question: `${t.type.displayName} has several dates. Which one should the period apply to?`,
-              options: visibleTimes.map((f) => ({ id: f.propertyIdentityId, name: t.properties.get(f.propertyIdentityId)!.property.displayName })),
-            },
-          };
-        }
-        if (fallback === undefined) {
-          return { refusal: refuse('compile.no_time_field', `${t.type.displayName} declares no time field a period could apply to`, { element: { kind: 'object_type', id: t.type.id, name: t.type.apiName } }) };
-        }
-        fieldId = fallback.propertyIdentityId;
-      }
-      const e = n.period.expression;
-      period = {
-        property: fieldId, asWritten: n.period.asWritten.trim() || 'the period',
-        expression: e.kind === 'between' ? { kind: 'between', from: param(e.from), to: param(e.to) } : e,
-      };
-    }
-    planNodes.push({ ...(iface === undefined ? { objectTypeId: nodes[i]!.type.id } : { interfaceId: iface.type.id }), filters, ...(period === undefined ? {} : { period }) });
+    const conditions = conditionsOn(nodes[i]!, n, chosen, param);
+    if (!('filters' in conditions)) return conditions;
+    planNodes.push({
+      ...(iface === undefined ? { objectTypeId: nodes[i]!.type.id } : { interfaceId: iface.type.id }), filters: conditions.filters,
+      ...(conditions.period === undefined ? {} : { period: conditions.period }),
+    });
   }
 
   const hops: QueryPlanInput['hops'] = [];
@@ -351,6 +364,233 @@ export function translate(output: ModelOutput, access: ReaderAccess, chosen?: Ch
     return { refusal: refuse('compile.plan_invalid', 'the question compiled to a plan that does not hold together, and it is refused rather than repaired', { element: { kind: 'plan' } }) };
   }
   return { plan: parsed.data, parameters };
+}
+
+type Param = (value: z.infer<typeof literal> | z.infer<typeof literal>[]) => { param: string };
+
+/**
+ * A node's or step's filters and period on its type, by name: each property one the reader may see,
+ * each value a parameter; a period on a declared time field, the type's default, the one chosen,
+ * or a clarification among several.
+ */
+function conditionsOn(t: TypeAccess, n: { filters?: z.infer<typeof modelFilter>[] | undefined; period?: z.infer<typeof modelPeriod> | undefined }, chosen: Chosen | undefined, param: Param)
+  : { filters: PlanFilter[]; period?: PlanPeriod | undefined } | { refusal: Refusal } | { clarification: Clarification } {
+  const unknown = (name: string) => refuse('compile.property_unknown', `${t.type.displayName} has no property called ${name.slice(0, 100)}`, { element: { kind: 'property', name: name.slice(0, 200) } });
+  const filters: PlanFilter[] = [];
+  for (const f of n.filters ?? []) {
+    const p = propertyByName(t, f.property);
+    if (p === undefined) return { refusal: unknown(f.property) };
+    const needsValue = f.op !== 'is_null' && f.op !== 'is_not_null';
+    if (needsValue && f.value === undefined) return { refusal: refuse('compile.filter_value_missing', `a filter on ${p.property.apiName} has no value`, { element: { kind: 'property', id: p.property.identityId, name: p.property.apiName } }) };
+    filters.push({ property: p.property.identityId, op: f.op, ...(needsValue ? { value: param(f.value!) } : {}) });
+  }
+  if (n.period === undefined) return { filters };
+  const visibleTimes = t.type.timeFields.filter((f) => t.properties.has(f.propertyIdentityId));
+  let fieldId: string | undefined;
+  if (n.period.property !== undefined) {
+    const p = propertyByName(t, n.period.property);
+    if (p === undefined) return { refusal: unknown(n.period.property) };
+    if (!visibleTimes.some((f) => f.propertyIdentityId === p.property.identityId)) {
+      return { refusal: refuse('compile.period_field', `${p.property.apiName} is not a declared time field of ${t.type.displayName}`, { element: { kind: 'time_field', id: p.property.identityId, name: p.property.apiName } }) };
+    }
+    fieldId = p.property.identityId;
+  } else {
+    const fallback = (chosen?.about === 'time_field' ? visibleTimes.find((f) => f.propertyIdentityId === chosen.elementId) : undefined)
+      ?? visibleTimes.find((f) => f.isDefault) ?? (visibleTimes.length === 1 ? visibleTimes[0] : undefined);
+    if (fallback === undefined && visibleTimes.length > 1) {
+      return {
+        clarification: {
+          about: 'time_field', question: `${t.type.displayName} has several dates. Which one should the period apply to?`,
+          options: visibleTimes.map((f) => ({ id: f.propertyIdentityId, name: t.properties.get(f.propertyIdentityId)!.property.displayName })),
+        },
+      };
+    }
+    if (fallback === undefined) {
+      return { refusal: refuse('compile.no_time_field', `${t.type.displayName} declares no time field a period could apply to`, { element: { kind: 'object_type', id: t.type.id, name: t.type.apiName } }) };
+    }
+    fieldId = fallback.propertyIdentityId;
+  }
+  const e = n.period.expression;
+  return {
+    filters,
+    period: {
+      property: fieldId, asWritten: n.period.asWritten.trim() || 'the period',
+      expression: e.kind === 'between' ? { kind: 'between', from: param(e.from), to: param(e.to) } : e,
+    },
+  };
+}
+
+/**
+ * A chain in names to typed steps over ids (37.8), with referential truth as for a plan: each step's
+ * names on the type of the set it reads, each link one from that type, an input an earlier step (a
+ * set, except select, which reads a group). Values become the chain's parameters; compile then
+ * plans every step and refuses the chain at the first step that cannot run.
+ */
+function translateChain(steps: readonly ModelStep[], access: ReaderAccess, chosen?: Chosen): Translated {
+  const parameters: PlanParameters = {};
+  let next = 1;
+  const param: Param = (value) => {
+    const name = `p${next}`;
+    next += 1;
+    parameters[name] = value;
+    return { param: name };
+  };
+  /** The type of each step that makes a set. */
+  const typeAt = new Map<number, TypeAccess>();
+  const out: AnalysisStepInput[] = [];
+  for (const [i, step] of steps.entries()) {
+    const position = i + 1;
+    const fail = (code: string, reason: string, extra: Partial<Refusal> = {}): Translated => ({ refusal: refuse(code, `step ${position}: ${reason}`, extra) });
+    const setAt = (p: number): TypeAccess | string => {
+      if (p >= position) return `it reads step ${p}; a step reads earlier steps only`;
+      return typeAt.get(p) ?? `it needs a set of objects, and step ${p} makes a result, which only select turns back into a set`;
+    };
+    const propertyOf = (t: TypeAccess, name: string): PropertyAccess | Translated => propertyByName(t, name)
+      ?? fail('compile.property_unknown', `${t.type.displayName} has no property called ${name.slice(0, 100)}`, { element: { kind: 'property', name: name.slice(0, 200) } });
+    const isTranslated = (v: unknown): v is Translated => typeof v === 'object' && v !== null && ('refusal' in v || 'clarification' in v);
+    const measuresOn = (t: TypeAccess, measures: readonly z.infer<typeof modelMeasure>[]) => {
+      const kept: { fn: (typeof MEASURE_FUNCTIONS)[number]; property?: string; as: string }[] = [];
+      for (const m of measures) {
+        if (m.property === undefined) {
+          if (m.fn !== 'count') return fail('compile.measure_property', `${m.fn} needs a property to measure`);
+          kept.push({ fn: m.fn, as: m.as });
+          continue;
+        }
+        const p = propertyOf(t, m.property);
+        if (isTranslated(p)) return p;
+        kept.push({ fn: m.fn, property: p.property.identityId, as: m.as });
+      }
+      return kept;
+    };
+    const keysOn = (t: TypeAccess, keys: readonly z.infer<typeof modelKey>[]) => {
+      const kept: { property: string; bucket?: (typeof CALENDAR_UNITS)[number] }[] = [];
+      for (const k of keys) {
+        const p = propertyOf(t, k.property);
+        if (isTranslated(p)) return p;
+        kept.push({ property: p.property.identityId, ...(k.bucket === undefined ? {} : { bucket: k.bucket }) });
+      }
+      return kept;
+    };
+
+    switch (step.operation) {
+      case 'filter': {
+        if ((step.objectType === undefined) === (step.input === undefined)) return fail('compile.step_source', 'a filter makes a fresh set of a type or narrows an earlier set: one of them');
+        let t: TypeAccess | string | undefined;
+        if (step.objectType !== undefined) {
+          t = typeByName(access, step.objectType);
+          if (t === undefined) return fail('compile.object_type_unknown', `there is no object type called ${step.objectType.slice(0, 100)} available to you`, { element: { kind: 'object_type', name: step.objectType.slice(0, 200) } });
+        } else {
+          t = setAt(step.input!);
+        }
+        if (typeof t === 'string') return fail('compile.step_input', t);
+        const c = conditionsOn(t, step, chosen, param);
+        if (!('filters' in c)) return c;
+        out.push({
+          operation: 'filter', ...(step.objectType !== undefined ? { base: { objectTypeId: t.type.id } } : { input: step.input! }), filters: c.filters,
+          ...(c.period === undefined ? {} : { period: c.period }),
+        });
+        typeAt.set(position, t);
+        break;
+      }
+      case 'traverse': {
+        const from = setAt(step.input);
+        if (typeof from === 'string') return fail('compile.step_input', from);
+        const link = [...access.links.values()].find((l) => l.link.apiName === step.link && (l.link.fromTypeId === from.type.id || l.link.toTypeId === from.type.id));
+        if (link === undefined) return fail('compile.link_type_unknown', `there is no link called ${step.link.slice(0, 100)} from ${from.type.displayName} available to you`, { element: { kind: 'link_type', name: step.link.slice(0, 200) } });
+        const targetId = link.link.fromTypeId === from.type.id ? link.link.toTypeId : link.link.fromTypeId;
+        const target = access.types.get(targetId);
+        if (target === undefined) return fail('compile.link_type_unknown', `${link.link.apiName} leads to objects not available to you`, { element: { kind: 'link_type', id: link.link.id, name: link.link.apiName } });
+        let route = step.route === undefined ? undefined : link.routes.find((r) => routeName(r.position) === step.route);
+        if (step.route !== undefined && route === undefined) return fail('compile.route_unknown', `${link.link.apiName} has no route called ${step.route.slice(0, 50)}`, { element: { kind: 'route', name: step.route.slice(0, 200) } });
+        route ??= (chosen?.about === 'route' ? link.routes.find((r) => r.id === chosen.elementId) : undefined)
+          ?? (link.routes.length === 1 ? link.routes[0] : link.routes.find((r) => r.id === link.link.defaultRouteId));
+        if (route === undefined) {
+          return {
+            clarification: {
+              about: 'route', question: `${link.link.forwardName} can be followed more than one way. Which route did you mean?`,
+              options: link.routes.map((r) => ({ id: r.id, name: `${link.link.apiName} ${routeName(r.position)}` })),
+            },
+          };
+        }
+        const c = conditionsOn(target, step, chosen, param);
+        if (!('filters' in c)) return c;
+        out.push({ operation: 'traverse', input: step.input, linkTypeId: link.link.id, routeId: route.id, filters: c.filters, ...(c.period === undefined ? {} : { period: c.period }) });
+        typeAt.set(position, target);
+        break;
+      }
+      case 'derive': {
+        const from = setAt(step.input);
+        if (typeof from === 'string') return fail('compile.step_input', from);
+        const properties: string[] = [];
+        for (const name of step.properties) {
+          const p = propertyOf(from, name);
+          if (isTranslated(p)) return p;
+          properties.push(p.property.identityId);
+        }
+        out.push({ operation: 'derive', input: step.input, properties });
+        typeAt.set(position, from);
+        break;
+      }
+      case 'group': case 'time_series': case 'pivot': {
+        const from = setAt(step.input);
+        if (typeof from === 'string') return fail('compile.step_input', from);
+        if (step.operation === 'group') {
+          const groupBy = keysOn(from, step.groupBy ?? []);
+          if (isTranslated(groupBy)) return groupBy;
+          const measures = measuresOn(from, step.measures);
+          if (isTranslated(measures)) return measures;
+          out.push({ operation: 'group', input: step.input, groupBy, measures });
+        } else if (step.operation === 'time_series') {
+          const p = propertyOf(from, step.property);
+          if (isTranslated(p)) return p;
+          const measures = measuresOn(from, step.measures);
+          if (isTranslated(measures)) return measures;
+          out.push({ operation: 'time_series', input: step.input, property: p.property.identityId, unit: step.unit, measures });
+        } else {
+          const rows = propertyOf(from, step.rows);
+          if (isTranslated(rows)) return rows;
+          const columns = propertyOf(from, step.columns);
+          if (isTranslated(columns)) return columns;
+          const measure = measuresOn(from, [step.measure]);
+          if (isTranslated(measure)) return measure;
+          out.push({ operation: 'pivot', input: step.input, rows: rows.property.identityId, columns: columns.property.identityId, measure: measure[0]! });
+        }
+        break;
+      }
+      case 'compare': {
+        const [a, b] = step.inputs as [number, number];
+        const left = setAt(a);
+        if (typeof left === 'string') return fail('compile.step_input', left);
+        const right = setAt(b);
+        if (typeof right === 'string') return fail('compile.step_input', right);
+        if (left.type.id !== right.type.id) return fail('compile.compare_types', `steps ${a} and ${b} are sets of different types; a comparison measures one type on both sides`);
+        const groupBy = keysOn(left, step.groupBy ?? []);
+        if (isTranslated(groupBy)) return groupBy;
+        const measures = measuresOn(left, step.measures);
+        if (isTranslated(measures)) return measures;
+        out.push({ operation: 'compare', inputs: [a, b], groupBy, measures });
+        break;
+      }
+      case 'select': {
+        if (step.input >= position) return fail('compile.step_input', `it reads step ${step.input}; a step reads earlier steps only`);
+        const grouped = out[step.input - 1]!;
+        if (grouped.operation !== 'group' && grouped.operation !== 'time_series' && grouped.operation !== 'pivot') {
+          return fail('compile.select_source', `select takes the objects behind a group of a group, time series or pivot step, and step ${step.input} is a ${grouped.operation.replace('_', ' ')}`);
+        }
+        const t = typeAt.get(grouped.input)!;
+        const key: { property: string; value: { param: string } | null; to?: { param: string } }[] = [];
+        for (const k of step.key) {
+          const p = propertyOf(t, k.property);
+          if (isTranslated(p)) return p;
+          key.push({ property: p.property.identityId, value: k.value === null ? null : param(k.value), ...(k.to === undefined ? {} : { to: param(k.to) }) });
+        }
+        out.push({ operation: 'select', input: step.input, key });
+        typeAt.set(position, t);
+        break;
+      }
+    }
+  }
+  return { chain: { steps: out, parameters } };
 }
 
 /** A stored plan in names, with its placeholders, for an Ask thread's later turn (spec 26.4). */

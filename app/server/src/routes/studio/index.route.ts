@@ -7,7 +7,7 @@
 import {
   abandonAppBranch, compareAppVersions, listAppBranches, mergeAppBranch, openAppBranch, saveAppBranchDraft,
   listAppReleases, promoteAppRelease, rollBackAppRelease, exportAppPackage, importAppPackage,
-  approveVersion, archiveApp, copyApp, createApp, getApp, getAppVersion, listApps, listAppShares, listTemplates, openApp, previewApp, publishToScope, returnVersion, runAppVariable, evaluateAppExpressions, revokeAppShare, rollbackApp, saveDraft, shareApp, submitForReview, withdrawPublication, listPublications,
+  approveVersion, archiveApp, copyApp, createApp, getApp, getAppVersion, listApps, listAppShares, listTemplates, openApp, previewApp, publishToScope, returnVersion, runAppVariable, evaluateAppExpressions, appChartSteps, revokeAppShare, rollbackApp, saveDraft, shareApp, submitForReview, withdrawPublication, listPublications,
 } from '../../contracts/studio/app.contract.ts';
 import { createObjectViewLayout, getObjectViewLayout, listObjectViewLayouts } from '../../contracts/studio/layout.contract.ts';
 import { studioController } from '../../controllers/studio/studio.controller.ts';
@@ -31,7 +31,7 @@ export const service = defineService({
         route(exportAppPackage, c.exportAppPackage), route(importAppPackage, c.importAppPackage),
         route(listAppReleases, c.listAppReleases), route(promoteAppRelease, c.promoteAppRelease), route(rollBackAppRelease, c.rollBackAppRelease),
         route(returnVersion, c.returnVersion), route(rollbackApp, c.rollbackApp), route(archiveApp, c.archiveApp), route(copyApp, c.copyApp),
-        route(openApp, c.openApp), route(runAppVariable, c.runAppVariable), route(evaluateAppExpressions, c.evaluateAppExpressions), route(shareApp, c.shareApp), route(revokeAppShare, c.revokeAppShare), route(listAppShares, c.listAppShares),
+        route(openApp, c.openApp), route(runAppVariable, c.runAppVariable), route(evaluateAppExpressions, c.evaluateAppExpressions), route(appChartSteps, c.appChartSteps), route(shareApp, c.shareApp), route(revokeAppShare, c.revokeAppShare), route(listAppShares, c.listAppShares),
         route(publishToScope, c.publishToScope), route(withdrawPublication, c.withdrawPublication), route(listPublications, c.listPublications), route(listTemplates, c.listTemplates), route(previewApp, c.previewApp),
         route(createObjectViewLayout, c.createObjectViewLayout), route(getObjectViewLayout, c.getObjectViewLayout), route(listObjectViewLayouts, c.listObjectViewLayouts),
       ],

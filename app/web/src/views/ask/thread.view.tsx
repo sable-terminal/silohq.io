@@ -8,12 +8,11 @@
 // shown back unless the thread kept it. Compact, it is the Ask side panel's conversation.
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import type { Input, Output } from '../../api/client.api.ts';
 import { Badge } from '../../components/badge.component.tsx';
 import { Banner } from '../../components/banner.component.tsx';
-import { Button } from '../../components/button.component.tsx';
+import { Button, LinkButton } from '../../components/button.component.tsx';
 import { Checkbox, TextArea } from '../../components/field.component.tsx';
 import { QueryView } from '../../components/query.component.tsx';
 import { ErrorMessage, Loading } from '../../components/states.component.tsx';
@@ -24,6 +23,8 @@ import { findingHref, objectHref, scenarioHref } from '../../navigation/links.na
 import { ResultByRef } from '../../results/result.result.tsx';
 import { hrefWith } from '../../utils/href.util.ts';
 import { plural } from '../../utils/format.util.ts';
+import { OPERATION_LABEL } from '../explorer/chain.view.ts';
+import { StartAnalysis } from '../explorer/start.view.tsx';
 import { PlanWords } from './plan.view.tsx';
 import styles from './ask.view.module.css';
 
@@ -64,26 +65,35 @@ function Answer({ threadId, turn }: { threadId: string; turn: Turn }) {
   return (
     <div className={styles.answer}>
       <ResultByRef key={resultRef} queryId={resultRef} label={`Answer to turn ${turn.sequence}`} expired={() => again} />
-      {turn.manifestId !== null ? <HowAnswered planId={turn.manifestId} /> : null}
-      {turn.manifestId !== null ? <AnalyseFurther threadId={threadId} turn={turn} /> : null}
+      {turn.manifestId !== null && turn.chain !== null ? <AnsweredInSteps turn={turn} manifestId={turn.manifestId} chain={turn.chain} /> : null}
+      {turn.manifestId !== null && turn.chain === null ? <HowAnswered planId={turn.manifestId} /> : null}
+      {turn.manifestId !== null && turn.chain === null ? <AnalyseFurther threadId={threadId} turn={turn} /> : null}
+    </div>
+  );
+}
+
+/**
+ * A harder question answered as a chain of steps (37.8): what each step did, and the chain opened
+ * in Analysis with the turn's own values, where every step's output can be seen.
+ */
+function AnsweredInSteps({ turn, manifestId, chain }: { turn: Turn; manifestId: string; chain: NonNullable<Turn['chain']> }) {
+  const last = chain.operations.at(-1);
+  return (
+    <div className={styles.expired}>
+      <span>Answered in {plural(chain.operations.length, 'step')}: {chain.operations.map((o) => OPERATION_LABEL[o].toLowerCase()).join(', then ')}.</span>
+      {last === 'compare' ? <span className={styles.muted}>The last step compares two sets: this is the first; Analysis shows both side by side.</span> : null}
+      <LinkButton size="sm" icon="chart" href={hrefWith('/explorer/analyses/', { manifest: manifestId, analysis: turn.id })}>Open in Analysis</LinkButton>
     </div>
   );
 }
 
 /** The answer continued as an analysis (37.8): its plan made steps with its values, opened in Analysis. */
 function AnalyseFurther({ threadId, turn }: { threadId: string; turn: Turn }) {
-  const router = useRouter();
   const make = useMutation('createWorkspaceAnalysisFromTurn', { refresh: false });
-  const [notSteps, setNotSteps] = useState<string | undefined>();
   return (
     <div className={styles.expired}>
-      <Button size="sm" icon="chart" pending={make.pending} blocked={make.blocked} onClick={() => void make.run({ body: { threadId, sequence: turn.sequence } }).then((r) => {
-        if (!r.ok) return;
-        if (r.data.outcome === 'analysis') router.push(hrefWith('/explorer/analyses/', { manifest: r.data.manifestId, analysis: r.data.analysisId }) as never);
-        else setNotSteps(r.data.outcome === 'not_steps' ? r.data.refusal.reason : `step ${r.data.refused.position}: ${r.data.refused.refusal.reason}`);
-      })}>Analyse further</Button>
-      {notSteps !== undefined ? <span className={styles.muted}>Not as steps: {notSteps}.</span> : null}
-      {make.error !== undefined ? <ErrorMessage error={make.error} /> : null}
+      <StartAnalysis label="Analyse further" pending={make.pending} blocked={make.blocked} error={make.error}
+        start={() => make.run({ body: { threadId, sequence: turn.sequence } }).then((r) => (r.ok ? r.data : undefined))} />
     </div>
   );
 }
@@ -175,9 +185,8 @@ function TurnView({ threadId, turn, onChoose, busy }: { threadId: string; turn: 
   );
 }
 
-/** The question box: plain words in; a harder question may ask for the advanced compile. */
 /** How a question would be read, without running it: a compile (charged), never a read of the systems. */
-function Preview({ question, onClose }: { question: string; onClose: () => void }) {
+function Preview({ question, advanced, onClose }: { question: string; advanced: boolean; onClose: () => void }) {
   const compile = useMutation('compileQuestion', { refresh: false });
   const [asked, setAsked] = useState(false);
   if (!asked) {
@@ -188,7 +197,7 @@ function Preview({ question, onClose }: { question: string; onClose: () => void 
           <Button size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" blocked={compile.blocked} onClick={() => {
             setAsked(true);
-            void compile.run({ body: { question, execute: false } });
+            void compile.run({ body: { question, execute: false, chains: advanced } });
           }}>Check it</Button>
         </div>
       </div>
@@ -200,6 +209,7 @@ function Preview({ question, onClose }: { question: string; onClose: () => void 
       {compile.error !== undefined ? <ErrorMessage error={compile.error} /> : null}
       {compile.data !== undefined ? (
         compile.data.outcome === 'plan' || compile.data.outcome === 'answer' ? <PlanWords plan={compile.data.plan} />
+          : compile.data.outcome === 'analysis' ? <p>In {plural(compile.data.steps.length, 'step')}: {compile.data.steps.map((x) => OPERATION_LABEL[x.operation].toLowerCase()).join(', then ')}.</p>
           : compile.data.outcome === 'clarification' ? <p className={styles.muted}>Silo would ask what you meant: ask it, and choose.</p>
           : <p className={styles.muted}>It could not be turned into a question over your data as written.</p>
       ) : null}
@@ -208,6 +218,7 @@ function Preview({ question, onClose }: { question: string; onClose: () => void 
   );
 }
 
+/** The question box: plain words in; a harder question may be answered in steps, an advanced compile. */
 export function Composer({ onAsk, pending, blocked, error, placeholder, tool, initial, preview = false }: {
   onAsk: (body: AskBody) => Promise<boolean>;
   /** Offer to check how the question would be read before asking it. */
@@ -237,13 +248,13 @@ export function Composer({ onAsk, pending, blocked, error, placeholder, tool, in
         }} />
       {error !== undefined ? <ErrorMessage error={error} /> : null}
       <div className={styles.composerFoot}>
-        <Checkbox label="A harder question" hint="Charged as an advanced compile" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
+        <Checkbox label="A harder question" hint="Silo may answer it in steps, as an analysis; that is an advanced compile (3 tokens)" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
         <span className={styles.composerButtons}>
           {preview ? <Button variant="ghost" disabled={question.trim() === ''} onClick={() => setChecking(true)}>Check how it would be read</Button> : null}
           <Button type="submit" variant="primary" icon="send" pending={pending} blocked={blocked} disabled={question.trim() === ''}>Ask</Button>
         </span>
       </div>
-      {checking ? <Preview key={question} question={question.trim()} onClose={() => setChecking(false)} /> : null}
+      {checking ? <Preview key={`${question}:${advanced}`} question={question.trim()} advanced={advanced} onClose={() => setChecking(false)} /> : null}
     </form>
   );
 }

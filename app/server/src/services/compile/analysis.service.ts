@@ -14,6 +14,7 @@ import {
 } from '../../contracts/compile/analysis.contract.ts';
 import type { getVocabulary } from '../../contracts/compile/compile.contract.ts';
 import { MAX_HOPS, queryPlan, type PlanFilter, type PlanPeriod, type QueryPlan, type QueryPlanInput, type Refusal } from '../../contracts/planner/plan.contract.ts';
+import type { QueryResult } from '../../contracts/executor/result.contract.ts';
 import type { HandlerContext } from '../../infra/http.infra.ts';
 import { inTransaction } from '../../infra/postgres.infra.ts';
 import { compiledManifestRepo, planBindingRepo } from '../../repos/ontology/index.repo.ts';
@@ -234,6 +235,15 @@ export function stepsOfPlan(plan: QueryPlan): { steps: AnalysisStepInput[]; note
 /** An answer continued as an analysis (spec 37.8): its plan made steps, its values kept under the new binding. */
 export async function analysisFromPlan(deps: CompileDeps, ctx: HandlerContext, input: z.output<typeof fromPlanContract.body>)
   : Promise<z.output<typeof fromPlanContract.response>> {
+  // An answer that is a chain already (a harder question, 37.8): the same chain, its values copied under the new binding.
+  const row = await inTransaction(deps.databases.pool('control'), ctx.request, (db) => compiledManifestRepo.findById(db, input.planId), { readOnly: true });
+  if (row?.kind === 'analysis') {
+    const values = await boundParameters(deps, ctx, input.planId, input.fromBindingId);
+    if (isRefusal(values)) return { outcome: 'not_steps', refusal: values };
+    const { steps } = await stepsOf(deps, ctx, input.planId);
+    await keepBinding(deps, ctx, input.bindingId, input.planId, values);
+    return { outcome: 'analysis', manifestId: input.planId, ontologyVersionId: row.ontologyVersionId, steps, notes: [] };
+  }
   const stored = await compiledPlan(deps, ctx, input.planId);
   const parameters = await boundParameters(deps, ctx, input.planId, input.fromBindingId);
   if (isRefusal(parameters)) return { outcome: 'not_steps', refusal: parameters };
@@ -245,10 +255,13 @@ export async function analysisFromPlan(deps: CompileDeps, ctx: HandlerContext, i
   return kept.outcome === 'analysis' ? { ...kept, notes: converted.notes } : kept;
 }
 
-/** Compiles and keeps a chain (spec 37.8): no model, never metered. */
-export async function compileChain(deps: CompileDeps, ctx: HandlerContext, input: z.output<typeof compileContract.body>)
+/**
+ * Compiles and keeps a chain (spec 37.8), against main's head or the version a question was
+ * compiled against. By hand, no model and never metered; from a question, compile charges it.
+ */
+export async function compileChain(deps: CompileDeps, ctx: HandlerContext, input: z.output<typeof compileContract.body>, ontologyVersionId?: string)
   : Promise<z.output<typeof compileContract.response>> {
-  const vocabulary = await vocabularyOf(deps, ctx, undefined);
+  const vocabulary = await vocabularyOf(deps, ctx, ontologyVersionId);
   const chain = chainOf(input.steps, vocabulary);
   if (!Array.isArray(chain)) return { outcome: 'refusal', refused: chain };
   // Each plan against the reader's vocabulary and bounds now, so a step that could never run is refused at once.
@@ -270,16 +283,26 @@ async function stepsOf(deps: CompileDeps, ctx: HandlerContext, manifestId: strin
   return { row, steps: parsed.data };
 }
 
+/** How a chain is run: with whose values, why, and how far. */
+export interface ChainRun {
+  bindingId?: string | undefined;
+  upTo?: number | undefined;
+  trigger: string;
+  purposeSessionIds?: readonly string[] | undefined;
+}
+
 /**
  * Runs a chain step by step (spec 37.8): each under its own bound, members for a set and groups for a
  * result; the first step refused, by the engine or by its bound, names the step, the bound and the
- * count, and every step after it is not run. Earlier steps keep their results. Never metered.
+ * count, and every step after it is not run. Earlier steps keep their results. Never metered. The
+ * last step's results come back whole, for a caller that answers with them (an Ask turn, a re-run).
  */
-export async function runChain(deps: CompileDeps, ctx: HandlerContext, manifestId: string, input: z.output<typeof runAnalysis.body>)
-  : Promise<z.output<typeof runAnalysis.response>> {
+export async function runChainSteps(deps: CompileDeps, ctx: HandlerContext, manifestId: string, input: ChainRun)
+  : Promise<{ steps: StepOutcome[]; last: QueryResult[] }> {
   const { steps } = await stepsOf(deps, ctx, manifestId);
   const parameters = await boundParameters(deps, ctx, manifestId, input.bindingId);
   const out: StepOutcome[] = [];
+  let last: QueryResult[] = [];
   let stopped = isRefusal(parameters);
   for (const step of steps) {
     if (input.upTo !== undefined && step.position > input.upTo) break;
@@ -289,7 +312,7 @@ export async function runChain(deps: CompileDeps, ctx: HandlerContext, manifestI
         : { outcome: 'not_run', position: step.position, operation: step.operation });
       continue;
     }
-    const results: Extract<StepOutcome, { outcome: 'result' }>['results'] = [];
+    const results: QueryResult[] = [];
     let refusal: Refusal | undefined;
     for (const plan of step.plans) {
       const ran = await execute(deps, ctx, plan, parameters as Exclude<typeof parameters, Refusal>, manifestId, input.trigger, input.purposeSessionIds);
@@ -308,16 +331,26 @@ export async function runChain(deps: CompileDeps, ctx: HandlerContext, manifestI
         };
         break;
       }
-      results.push({ queryId: ran.result.queryId, kind: ran.result.kind, total: ran.result.total, population: ran.result.population, computedAt: ran.result.computedAt, reduced: ran.result.reduced });
+      results.push(ran.result);
     }
     if (refusal !== undefined) {
       out.push({ outcome: 'refused', position: step.position, operation: step.operation, refusal });
       stopped = true;
     } else {
-      out.push({ outcome: 'result', position: step.position, operation: step.operation, outputKind: step.outputKind, results });
+      last = results;
+      out.push({
+        outcome: 'result', position: step.position, operation: step.operation, outputKind: step.outputKind,
+        results: results.map((r) => ({ queryId: r.queryId, kind: r.kind, total: r.total, population: r.population, computedAt: r.computedAt, reduced: r.reduced })),
+      });
     }
   }
-  return { manifestId, steps: out };
+  return { steps: out, last: stopped ? [] : last };
+}
+
+export async function runChain(deps: CompileDeps, ctx: HandlerContext, manifestId: string, input: z.output<typeof runAnalysis.body>)
+  : Promise<z.output<typeof runAnalysis.response>> {
+  const { steps } = await runChainSteps(deps, ctx, manifestId, input);
+  return { manifestId, steps };
 }
 
 /** A chain's steps, and its values for the person who bound them (and nobody else). */

@@ -16,6 +16,7 @@
 // compile with a plan in structure: vocabulary still first, no model call, never metered.
 
 import { z } from 'zod';
+import { keptStep, stepOutcome } from './analysis.contract.ts';
 import { defineContract } from '../endpoint.contract.ts';
 import { DATA_TYPES } from '../ontology/manifest.contract.ts';
 import { queryResult, RUN_TIMEOUT_MS } from '../executor/result.contract.ts';
@@ -102,6 +103,16 @@ export const compileOutcome = z.discriminatedUnion('outcome', [
   z.object({ outcome: z.literal('intent'), intent: compiledIntent, charge: charged, compileClass: z.enum(COMPILE_CLASSES) }),
   /** Where the caller allows changes: a Cron asked for, its schedule written by compile, charged as a compile, never saved (36.4). */
   z.object({ outcome: z.literal('schedule'), schedule: compiledSchedule, charge: charged, compileClass: z.enum(COMPILE_CLASSES) }),
+  /**
+   * Where the caller allows chains (37.8): the question compiled into a chain of analysis steps,
+   * kept as an analysis manifest with its values under the binding, charged once as an advanced
+   * compile. With execute, each step run in order: the first refused names itself, nothing after it runs.
+   */
+  z.object({
+    outcome: z.literal('analysis'), manifestId: z.uuid(), compileClass: z.literal('advanced'), charge: charged,
+    steps: z.array(keptStep.omit({ plans: true })),
+    ran: z.array(stepOutcome).optional(),
+  }),
 ]);
 export type CompileOutcome = z.infer<typeof compileOutcome>;
 
@@ -177,6 +188,11 @@ export const compileQuestion = defineContract({
     execute: z.boolean().default(true),
     /** The question may ask for a change (Ask, spec 42.9): compiled to an intent, never executed. */
     intents: z.boolean().default(false),
+    /**
+     * The question may compile into a chain of analysis steps (Ask's harder question, 37.8): an
+     * advanced compile (query.advanced), charged once when the chain plan exists.
+     */
+    chains: z.boolean().default(false),
     purposeSessionIds: purposeSessionIds.optional(),
     /**
      * Asked of an AI agent (D236): its brief goes to the model as documentation, and the model is

@@ -85,7 +85,7 @@ export function createWorkspaceService(options: WorkspaceOptions = {}) {
           route(saveView, c.saveView), route(listViews, c.listViews), route(openView, c.openView), route(renameView, c.renameView),
           route(archiveView, c.archiveView), route(favouriteView, c.favouriteView), route(unfavouriteView, c.unfavouriteView),
           route(runView, c.runView), route(copyView, c.copyView), route(getDashboard, c.getDashboard), route(moveTile, c.moveTile),
-          route(anc.createAnalysis, c.createAnalysis), route(anc.createAnalysisFromTurn, c.createAnalysisFromTurn), route(anc.readAnalysis, c.readAnalysis), route(anc.runAnalysis, c.runAnalysis),
+          route(anc.createAnalysis, c.createAnalysis), route(anc.createAnalysisFromTurn, c.createAnalysisFromTurn), route(anc.createAnalysisFromAppChart, c.createAnalysisFromAppChart), route(anc.readAnalysis, c.readAnalysis), route(anc.runAnalysis, c.runAnalysis),
           route(shareView, c.shareView), route(revokeShare, c.revokeShare), route(listShares, c.listShares),
           route(getSharingPolicy, c.getSharingPolicy), route(setOrganisationSharingPolicy, c.setOrganisationSharingPolicy),
           route(setScopeSharingPolicy, c.setScopeSharingPolicy),

@@ -15,7 +15,9 @@
 // pipeline's preview (D235). An AI agent is made with a brief and a type, a brief holding an email
 // refused, and talked to in Ask, where its brief is shown and goes with the question (D236). A
 // notebook reads suppliers, groups them by region, summarises and draws them (D239). A model to
-// predict their region is made and trained, and says why twelve objects are too few (D240).
+// predict their region is made and trained, and says why twelve objects are too few (D240). A chart
+// in the app, previewed, is continued as an analysis: the set as the chosen region keeps it, then
+// how many by region (37.8).
 
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
@@ -36,7 +38,9 @@ import { createSiloesCaptureService } from '../../server/src/routes/siloes-captu
 import { service as studioService } from '../../server/src/routes/studio/index.route.ts';
 import { createWorkspaceService } from '../../server/src/routes/workspace/index.route.ts';
 import { createAskService } from '../../server/src/routes/ask/index.route.ts';
-import { unavailableEngine, type CompileRequest, type QueryEngine } from '../../server/src/services/workspace/queryEngine.service.ts';
+import { unavailableEngine, type CompileOutcome, type CompileRequest, type QueryEngine } from '../../server/src/services/workspace/queryEngine.service.ts';
+import { createAnalysis, runAnalysis } from '../../server/src/contracts/workspace/analysis.contract.ts';
+import { createThread } from '../../server/src/contracts/ask/thread.contract.ts';
 import { LOCAL } from '../../server/tests/infra/services.helper.ts';
 import { startRecognitionCell, type RecognitionCell } from '../../server/tests/services/recognition.helper.ts';
 import { buildExport, gatewayAt, launch, open, shot, signIn, skip } from './browser.helper.ts';
@@ -48,10 +52,13 @@ let page: Page;
 const problems: string[] = [];
 // Ask's questions, as compile would be sent them: refused here, since no model runs in this cell.
 const asked: CompileRequest[] = [];
+// A harder question's answer in steps (37.8), as compile would return it once a test has made the chain.
+let chainAnswer: Extract<CompileOutcome, { outcome: 'plan' }> | undefined;
 const engine: QueryEngine = {
   ...unavailableEngine,
   async compile(request) {
     asked.push(request);
+    if (request.advanced && chainAnswer !== undefined) return chainAnswer;
     return { outcome: 'refusal', reason: 'no_plan', narrowing: 'name the suppliers you mean' };
   },
 };
@@ -154,6 +161,14 @@ describe('Studio in a browser (spec 35)', { skip }, () => {
     await embed.getByLabel('Shows').selectOption('suppliers');
     await embed.getByLabel('Layout').selectOption({ label: 'Graph' });
     await embed.getByLabel('Selecting a clone picks it into').selectOption('picked');
+    // A chart of the same set: how many by region, continued as an analysis in the preview (37.8).
+    await addWidget('Chart');
+    const chart = widget('Chart');
+    await chart.getByLabel('Shows').selectOption('suppliers');
+    await chart.getByLabel('By').selectOption({ label: 'Region' });
+    // Filter controls over it: a search box, which an analysis cannot keep, and says so.
+    await addWidget('Filter controls');
+    await widget('Filter controls').getByLabel('Narrows').selectOption('suppliers');
 
     await page.getByRole('button', { name: 'Save the draft' }).click();
     await toast('Saved. It validates.').waitFor();
@@ -166,7 +181,7 @@ describe('Studio in a browser (spec 35)', { skip }, () => {
     await page.waitForURL(/\/studio\/apps\/\?app=.*&version=1/);
     await page.getByRole('heading', { name: 'Supplier desk', exact: true }).waitFor();
     await page.getByText('Preview of draft 1').waitFor();
-    const table = page.getByRole('table').filter({ hasText: 'Region' });
+    const table = page.getByRole('table').filter({ hasText: 'Rating' });
     await table.getByRole('caption').filter({ hasText: /^1[2-9] objects|^[2-9]\d objects/ }).waitFor();
     const metric = page.getByRole('region', { name: 'metric 1' }).getByRole('figure');
     assert.ok(Number((await metric.getByRole('paragraph').innerText()).replaceAll(',', '')) >= 12, 'the count is the whole set');
@@ -185,6 +200,33 @@ describe('Studio in a browser (spec 35)', { skip }, () => {
     await page.getByRole('img', { name: /^Canvas of \d+ clones/ }).locator('canvas').waitFor();
     await page.getByText(/as read for you just now, not live/).waitFor();
     await shot(page, 'studio-runtime');
+
+    // The chart continued as an analysis (37.8): the set as the chosen region keeps it, then how many by region.
+    const preview = page.url();
+    const chart = page.getByRole('region', { name: /^chart \d+$/ });
+    await chart.getByRole('rowheader', { name: 'north' }).waitFor();
+    await chart.getByRole('button', { name: 'Analyse', exact: true }).click();
+    await page.waitForURL(/\/explorer\/analyses\/\?manifest=.+&analysis=/);
+    const steps = page.getByRole('list', { name: 'Steps' });
+    await steps.getByRole('listitem', { name: 'Step 1' }).getByText(/whose region is north$/).waitFor();
+    await steps.getByRole('listitem', { name: 'Step 1' }).getByText(/^4 suppliers match\.$/).waitFor();
+    await steps.getByRole('listitem', { name: 'Step 2' }).getByText(/by region: highest north \(4\); 1 group in all\./).waitFor();
+    await page.goto(preview);
+    await page.getByText('Preview of draft 1').waitFor();
+
+    // Searched in the app's filter controls: the analysis says first that the search is not kept, then opens.
+    await page.getByLabel('Region', { exact: true }).selectOption('north');
+    // The search reads the values the chart has, its regions.
+    await page.getByRole('form', { name: 'Filters' }).getByLabel('Search').fill('nor');
+    await chart.getByRole('cell', { name: '4', exact: true }).last().waitFor();
+    await chart.getByRole('button', { name: 'Analyse', exact: true }).click();
+    const ready = chart.getByRole('status').filter({ hasText: 'The analysis is ready, with these differences' });
+    await ready.getByText(/^The search in the app's filter controls is not kept/).waitFor();
+    await ready.getByRole('link', { name: 'Open the analysis' }).click();
+    await page.waitForURL(/\/explorer\/analyses\/\?manifest=.+&analysis=/);
+    await steps.getByRole('listitem', { name: 'Step 1' }).getByText(/^4 suppliers match\.$/).waitFor();
+    await page.goto(preview);
+    await page.getByText('Preview of draft 1').waitFor();
     assert.deepEqual(problems, []);
   });
 
@@ -498,6 +540,39 @@ describe('Studio in a browser (spec 35)', { skip }, () => {
     const sent = asked.at(-1)!;
     assert.deepEqual([sent.aiAgent?.name, sent.aiAgent?.brief, sent.aiAgent?.objectTypeIds.length, sent.aiAgent?.tools], ['Supplier scout', brief, 1, ['answer']]);
     await shot(page, 'ai-agent-ask');
+    assert.deepEqual(problems, []);
+  });
+
+  test('a harder question answered in steps (37.8): the answer, what each step did, and the chain opened in Analysis', async () => {
+    // The chain compile would make: every supplier, then how many by region.
+    const made = await r.gateway.call(createAnalysis, { body: { steps: [
+      { operation: 'filter', base: { objectTypeId: r.type('supplier').id } },
+      { operation: 'group', input: 1, groupBy: [{ property: r.prop('supplier', 'region') }], measures: [{ fn: 'count', as: 'suppliers' }] },
+    ] } }, r.cell.as(r.root));
+    assert.equal(made.outcome, 'analysis');
+    if (made.outcome !== 'analysis') return;
+    const ran = await r.gateway.call(runAnalysis, { params: { manifestId: made.manifestId }, body: { analysisId: made.analysisId } }, r.cell.as(r.root));
+    const last = ran.steps.at(-1)!;
+    assert.equal(last.outcome, 'result');
+    if (last.outcome !== 'result') return;
+    chainAnswer = {
+      outcome: 'plan', manifestId: made.manifestId, compileClass: 'advanced', tokensCharged: 3, rephraseUncharged: false, chain: made.steps,
+      ran: { outcome: 'result', resultRef: last.results[0]!.queryId, ranAt: last.results[0]!.computedAt, reduced: false, incompleteSources: [] },
+    };
+    const thread = await r.gateway.call(createThread, { body: {} }, r.keyed(r.root));
+    await page.goto(`${origin}/ask/threads/?thread=${thread.id}`);
+    await page.getByLabel('Your question').fill('How many suppliers are in each region, step by step?');
+    await page.getByLabel('A harder question').check();
+    await page.getByRole('button', { name: 'Ask', exact: true }).click();
+    await page.getByText('Answered in 2 steps: filter, then group.').waitFor();
+    // Several regions: drawn as a ranking, north's bar first.
+    await page.getByRole('button', { name: /^north: 4$/ }).first().waitFor();
+    await page.getByText('3 tokens', { exact: true }).waitFor();
+    assert.equal(asked.at(-1)!.advanced, true, 'asked as a harder question');
+    await page.getByRole('link', { name: 'Open in Analysis' }).click();
+    await page.waitForURL(/\/explorer\/analyses\/\?manifest=.+&analysis=/);
+    await page.getByRole('list', { name: 'Steps' }).getByRole('listitem', { name: 'Step 2' }).waitFor();
+    chainAnswer = undefined;
     assert.deepEqual(problems, []);
   });
 

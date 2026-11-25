@@ -191,6 +191,7 @@ export function workspaceController(deps: WorkspaceDeps) {
     // Analysis over object sets (37.8).
     createAnalysis: { handle: (input, ctx) => analyses.create(deps, ctx, input.body) } satisfies RouteHandlers<typeof anc.createAnalysis>,
     createAnalysisFromTurn: { handle: (input, ctx) => analyses.fromTurn(deps, ctx, input.body) } satisfies RouteHandlers<typeof anc.createAnalysisFromTurn>,
+    createAnalysisFromAppChart: { handle: (input, ctx) => analyses.fromAppChart(deps, ctx, input.body) } satisfies RouteHandlers<typeof anc.createAnalysisFromAppChart>,
     readAnalysis: { handle: (input, ctx) => analyses.read(deps, ctx, input.params.manifestId, input.query.analysisId) } satisfies RouteHandlers<typeof anc.readAnalysis>,
     runAnalysis: { handle: (input, ctx) => analyses.run(deps, ctx, input.params.manifestId, input.body) } satisfies RouteHandlers<typeof anc.runAnalysis>,
     copyView: {

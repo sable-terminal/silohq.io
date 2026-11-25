@@ -1,11 +1,13 @@
-// Analysis over object sets in the workspace (spec 37.8; contracts/workspace/analysis.contract.ts).
-// compile plans, keeps and runs the chain; the workspace records its steps (written by the view
+// Analysis over object sets in the workspace (spec 37.8; contracts/workspace/analysis.contract.ts),
+// built by hand, from an Ask answer (its plan made steps) or from a Studio chart (Studio makes the
+// steps for the viewer's values). compile plans, keeps and runs the chain; the workspace records its steps (written by the view
 // service, per the catalogue) and runs a view of kind analysis through it, its refusal naming the
 // step it stopped at and the bound and count that stopped it (37.10).
 
 import type { z } from 'zod';
 import { analysisFromPlan, compileAnalysis, getAnalysis, runAnalysis as runChain, type KeptStep, type StepOutcome } from '../../contracts/compile/analysis.contract.ts';
-import type { createAnalysis, createAnalysisFromTurn, readAnalysis, runAnalysis } from '../../contracts/workspace/analysis.contract.ts';
+import { appChartSteps } from '../../contracts/studio/app.contract.ts';
+import type { createAnalysis, createAnalysisFromAppChart, createAnalysisFromTurn, readAnalysis, runAnalysis } from '../../contracts/workspace/analysis.contract.ts';
 import type { RunOutcomeView } from '../../contracts/workspace/view.contract.ts';
 import { inTransaction } from '../../infra/postgres.infra.ts';
 import { analysisStepRepo, askThreadRepo, askTurnRepo } from '../../repos/workspace/index.repo.ts';
@@ -47,6 +49,18 @@ export async function fromTurn(deps: WorkspaceDeps, ctx: Context, input: z.outpu
   if (out.outcome !== 'analysis') return out;
   await recordSteps(deps, ctx, out.manifestId, out.steps);
   return { outcome: 'analysis', analysisId, manifestId: out.manifestId, steps: out.steps.map(({ plans: _plans, ...s }) => s), notes: out.notes };
+}
+
+/** A Studio chart continued as an analysis: Studio makes the chart steps for the viewer's values (an app they may run), compile keeps them. */
+export async function fromAppChart(deps: WorkspaceDeps, ctx: Context, input: z.output<typeof createAnalysisFromAppChart.body>): Promise<z.output<typeof createAnalysisFromAppChart.response>> {
+  const { appId, widgetId, ...viewed } = input;
+  const made = await deps.services.call(appChartSteps, { params: { appId, widgetId }, body: viewed }, opts(ctx));
+  if (made.outcome === 'not_steps') return made;
+  const analysisId = uuidv7();
+  const out = await deps.services.call(compileAnalysis, { body: { steps: made.steps, parameters: made.parameters, bindingId: analysisId } }, opts(ctx));
+  if (out.outcome === 'refusal') return { outcome: 'refusal', refused: out.refused };
+  await recordSteps(deps, ctx, out.manifestId, out.steps);
+  return { outcome: 'analysis', analysisId, manifestId: out.manifestId, steps: out.steps.map(({ plans: _plans, ...s }) => s), notes: made.notes };
 }
 
 export async function read(deps: WorkspaceDeps, ctx: Context, manifestId: string, analysisId: string | undefined): Promise<z.output<typeof readAnalysis.response>> {

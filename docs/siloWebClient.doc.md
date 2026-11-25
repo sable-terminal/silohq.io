@@ -311,6 +311,8 @@ Each stage ends with the web suite and, where the server changed, the server sui
   and the storage browser test (a chain built, followed back, saved, and refused at its bound).
 - **Since U17c (25 November 2026).** An analysis also begins from an object view's link group
   (Analyse these: the object named by its identifying property, D280) and from an Ask answer
-  (Analyse further: its plan made steps with its values, D281). Still to come: from a Studio chart,
-  and Ask compiling a question straight into a chain.
+  (Analyse further: its plan made steps with its values, D281), from a Studio chart (the chart
+  widget's Analyse, D282), and from a harder question in Ask compiled straight into a chain (D283:
+  the answer says it was answered in steps and opens in Analysis). Starting from an answer or a
+  chart says first what the steps do not keep (`src/views/explorer/start.view.tsx`).
 

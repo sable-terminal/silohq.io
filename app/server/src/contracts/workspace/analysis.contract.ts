@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { defineContract } from '../endpoint.contract.ts';
 import { analysisStep, keptStep, MAX_STEPS, stepOutcome } from '../compile/analysis.contract.ts';
 import { planParameters, refusal } from '../planner/plan.contract.ts';
+import { chartAsViewed } from '../studio/app.contract.ts';
 
 const CALLERS = ['gateway'] as const;
 const manifestParams = z.strictObject({ manifestId: z.uuid() });
@@ -34,17 +35,37 @@ export const createAnalysis = defineContract({
   maxBodyBytes: 256 * 1024,
 });
 
+/** An analysis started from something else: made, refused at a step, or not a chain at all (and why). */
+const startedOutcome = z.discriminatedUnion('outcome', [
+  z.object({
+    outcome: z.literal('analysis'), analysisId: z.uuid(), manifestId: z.uuid(), steps: z.array(keptStep.omit({ plans: true })),
+    /** What the steps do not keep of where they came from, said plainly. */
+    notes: z.array(z.string()),
+  }),
+  z.object({ outcome: z.literal('refusal'), refused: z.object({ position: z.int(), operation: z.string(), refusal }) }),
+  /** Its shape is not a chain, and why. */
+  z.object({ outcome: z.literal('not_steps'), refusal }),
+]);
+
 /** An Ask answer continued as an analysis (37.8): the asker's own turn, its plan made steps, its values copied under the analysis. */
 export const createAnalysisFromTurn = defineContract({
   service: 'workspace', name: 'createAnalysisFromTurn', method: 'POST', path: '/v1/workspace/analyses/from-turn', callers: CALLERS,
   context: 'organisation', idempotency: 'none',
   body: z.strictObject({ threadId: z.uuid(), sequence: z.int().min(1) }),
-  response: z.discriminatedUnion('outcome', [
-    z.object({ outcome: z.literal('analysis'), analysisId: z.uuid(), manifestId: z.uuid(), steps: z.array(keptStep.omit({ plans: true })), notes: z.array(z.string()) }),
-    z.object({ outcome: z.literal('refusal'), refused: z.object({ position: z.int(), operation: z.string(), refusal }) }),
-    /** The answer's shape is not a chain, and why. */
-    z.object({ outcome: z.literal('not_steps'), refusal }),
-  ]),
+  response: startedOutcome,
+});
+
+/**
+ * A Studio chart continued as an analysis (37.8): the chart of an app the viewer may run, made steps
+ * by Studio for their values and filter controls, compiled and kept as a chain under the analysis's
+ * own id. Built from typed operations with no model, so never metered.
+ */
+export const createAnalysisFromAppChart = defineContract({
+  service: 'workspace', name: 'createAnalysisFromAppChart', method: 'POST', path: '/v1/workspace/analyses/from-app-chart', callers: CALLERS,
+  context: 'organisation', idempotency: 'none',
+  body: chartAsViewed.extend({ appId: z.uuid(), widgetId: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/) }),
+  response: startedOutcome,
+  maxBodyBytes: 32_768,
 });
 
 export const readAnalysis = defineContract({

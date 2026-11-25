@@ -44,7 +44,7 @@ export const AREAS: readonly Area[] = [
         purpose: 'Chains of steps over sets of objects: filter, follow links, group, compare, and go back to the objects behind a figure.',
         does: ['Build an analysis step by step', 'See every step\'s output', 'Save it as a view'],
         keywords: ['analyse', 'chain', 'pivot', 'time series', 'compare', 'drill down'],
-        routes: ['createWorkspaceAnalysis', 'createWorkspaceAnalysisFromTurn', 'readWorkspaceAnalysis', 'runWorkspaceAnalysis'],
+        routes: ['createWorkspaceAnalysis', 'createWorkspaceAnalysisFromTurn', 'createWorkspaceAnalysisFromAppChart', 'readWorkspaceAnalysis', 'runWorkspaceAnalysis'],
       },
       {
         id: 'findings', label: 'Findings', href: '/explorer/findings/', icon: 'sparkle',

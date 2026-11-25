@@ -88,6 +88,13 @@ export const createWorkspaceAnalysisFromTurn = definePublicRoute({
   call: (input) => ({ body: input.body }), reply: (output) => output,
 });
 
+// Studio decides whether the viewer may run the app; the planner, what each step may read.
+export const createWorkspaceAnalysisFromAppChart = definePublicRoute({
+  name: 'createWorkspaceAnalysisFromAppChart', method: 'POST', path: '/workspace/analyses/from-app-chart', session: 'complete', permission: analysisPermission,
+  body: anc.createAnalysisFromAppChart.body, response: anc.createAnalysisFromAppChart.response, forwards: anc.createAnalysisFromAppChart,
+  call: (input) => ({ body: input.body }), reply: (output) => output,
+});
+
 export const readWorkspaceAnalysis = definePublicRoute({
   name: 'readWorkspaceAnalysis', method: 'GET', path: '/workspace/analyses/:manifestId', session: 'complete', permission: analysisPermission,
   params: anc.readAnalysis.params, query: anc.readAnalysis.query, response: anc.readAnalysis.response, forwards: anc.readAnalysis,
@@ -680,7 +687,7 @@ export const resumePipelineSchedule = definePublicRoute({
 
 export const WORKSPACE_ROUTES = [
   recordWorkspaceInteraction,
-  createWorkspaceAnalysis, createWorkspaceAnalysisFromTurn, readWorkspaceAnalysis, runWorkspaceAnalysis,
+  createWorkspaceAnalysis, createWorkspaceAnalysisFromTurn, createWorkspaceAnalysisFromAppChart, readWorkspaceAnalysis, runWorkspaceAnalysis,
   createWorkbook, listWorkbooks, getWorkbook, saveWorkbook, readWorkbookRanges, copyWorkbook, archiveWorkbook, shareWorkbook, revokeWorkbookShare,
   listWorkbookShares, exportWorkbook,
   createReport, listReports, getReport, saveReport, readReportBlocks, copyReport, archiveReport, shareReport, revokeReportShare, listReportShares, exportReport,

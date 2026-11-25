@@ -209,7 +209,103 @@ Results go to sovereign customers as a standing report, and to Enterprise custom
   - SC for sovereign operators and anyone with Fleet deployment rights to the sovereign cell;
   - DV where a contract requires it.
 
-## 9. Owned outside the code
+## 9. Key management: commissioning the HSM (61; D90, D206)
+
+Commercial cells keep their keys in Cloud KMS at the HSM protection level (Cloud HSM, europe-west2).
+The sovereign cell, and a customer's own installation where it uses an HSM, keep them in an HSM
+reached over PKCS#11. The sovereign cell's HSM is a Thales Luna. Keys never leave the HSM, and Silo
+never creates, changes or deletes one: it finds each key by its label, and fails if a key is
+missing or cannot do its job.
+
+**What the partition must hold.** The partition's Crypto Officer creates these, in the HSM, before
+Silo is deployed:
+
+| Key | Type | Used for | Named in Silo by |
+|---|---|---|---|
+| Wrapping key | AES, secret, able to encrypt and decrypt | Wrapping every data key that seals a secret (envelope encryption; AES-GCM with the row's binding as additional data) | `pkcs11:object=<label>`, registered as the cell's key version (below) |
+| Directory key | Secret key able to sign with SHA256-HMAC | Hashing email addresses for routing in the directory | `KMS_DIRECTORY_KEY_URI` |
+| Import key pair | RSA 3072 or 4096 bits, both halves under one label | Customers bringing their own key material (RSA-OAEP with SHA-256; only the public half leaves the HSM) | `KMS_IMPORT_KEY_URI` |
+
+**Settings** (validated at start-up; a missing one refuses the start):
+- `KMS_PROVIDER=pkcs11_hsm`.
+- `PKCS11_MODULE_PATH`: the vendor's PKCS#11 library, installed with Thales's Luna client on each
+  host that runs the credential and directory services.
+- `PKCS11_PROFILE=luna` (required for a sovereign cell; `generic` for any other HSM).
+- `PKCS11_TOKEN_LABEL`: the partition's label. Required with the Luna profile; a slot number is not
+  accepted, because Luna's slot numbers move with the client configuration and HA groups.
+- `PKCS11_PIN`: the partition's **Crypto User** PIN, supplied as a secret. Silo logs in as the Crypto
+  User, which can use keys and can never create or change them; never give it the Crypto Officer's.
+
+**Commissioning, in order:**
+1. Install the Luna client on the hosts, connect it to the HSM (or the HA group) and confirm the
+   partition is visible by its label.
+2. Create the three keys above in the partition as its Crypto Officer.
+3. Deploy with the settings above. At start-up the credential service checks every key it may use
+   and, with the Luna profile, wraps and unwraps a test value in the HSM, so a key that is missing,
+   cannot do its job, or behaves differently from what the profile expects stops the start with
+   `startup_refused_no_kms_key` and the reason. The directory service checks its key computes a MAC.
+4. Register the wrapping key as the cell's key version: a member of Silo staff holding
+   `key.rotate` starts a key rotation naming `pkcs11:object=<label>` (staff API, credential
+   `startKeyRotation`). It is verified in the HSM first.
+5. Run the real-hardware test once against the partition, under the Luna profile, and keep its
+   output with the commissioning record:
+   `TEST_PKCS11_MODULE=<client library> TEST_PKCS11_PROFILE=luna TEST_PKCS11_TOKEN_LABEL=<partition>
+   TEST_PKCS11_PIN=<Crypto User PIN> TEST_PKCS11_WRAP_LABEL=<wrap key> TEST_PKCS11_MAC_LABEL=<directory key>
+   TEST_PKCS11_IMPORT_LABEL=<import key pair> node --test tests/infra/pkcs11.test.ts` (in app/server).
+   It logs in as the Crypto User, wraps and unwraps with the HSM's own IVs, refuses an unwrap under
+   the wrong binding, computes a MAC, and reads the import key's public half.
+
+**Rotation.** A new wrapping key is created in the HSM, then registered by starting a key rotation
+as in step 4: it becomes active, the old version decrypt-only, and a sweep re-wraps each data key
+inside the HSM without opening any ciphertext. The old version is retired once nothing references
+it. Every organisation's audit log records the rotation.
+
+**Failover.** If a networked HSM drops the session (an HA failover, a lost link), Silo opens a new
+session and logs in again once before an operation fails.
+
+**Not yet proven on real hardware.** The Luna profile was built from Thales's documentation and
+tested against a simulated Luna in FIPS mode, at firmware before and from 7.9.3. Two details have
+not run against a real Luna: the Crypto User's login type, and the form in which Luna returns the
+IV it generates. Step 3 and step 5 prove both. A mismatch fails safe (the service does not start,
+and says why) and is a small change to the adapter. Run them before the sovereign cell takes
+customer data.
+
+## 10. Behind the customer's own ingress on 443 (self-managed and on-premises)
+
+Where Silo is installed in a customer's network, it sits behind their existing load balancer or
+reverse proxy on TCP 443, so their front door stays the one place traffic enters. The ingress routes
+by the TLS server name (SNI) to two hostnames, for example:
+
+| Hostname | Goes to | How the ingress treats it |
+|---|---|---|
+| `silo.<customer domain>` | the gateway's public listener (`GATEWAY_PUBLIC_PORT`) | Ends TLS with the public certificate, adds the client's address to `X-Forwarded-For`, and re-encrypts to the gateway, which keeps its own certificate (production requires one). WebSocket upgrades pass through (the live socket, `/api/v1/live`). |
+| `agent.<customer domain>` | the agent endpoint (`AGENT_ENDPOINT_PORT`) | **Passes the TCP stream through untouched** (SNI passthrough, no decryption). The agent's mutual TLS must end at Silo. |
+
+**Settings:**
+- `GATEWAY_PUBLIC_ORIGIN=https://silo.<customer domain>`: the one origin the web client is served
+  from; state-changing requests and WebSocket handshakes must come from it.
+- `TRUST_PROXY_HOPS`: the number of proxies that append to `X-Forwarded-For` in front of the gateway
+  (1 for one ingress). The gateway takes the client's address that many hops from the right, so a
+  client cannot choose its own address; per-address rate limits and sign-in protection depend on it.
+- Each agent's configuration: `endpoint` is the ingress (`agent.<customer domain>:443`), and
+  `serverName` defaults to that hostname, which is what the ingress routes by. Agents reach it
+  through a corporate HTTP CONNECT proxy if they have to (`proxy`).
+
+**What not to do:** do not let the ingress, or any proxy between the agent and it, decrypt the
+agent's hostname. A TLS-inspecting proxy breaks mutual TLS by design: the agent refuses the
+connection and its error names the issuer of the certificate it was shown, so the network team can
+exempt the hostname from inspection. Do not pass the gateway through untouched either: the gateway
+would then see every client as the ingress's own address, and the per-address limits would count
+everyone as one client.
+
+**Proved by** `tests/services/ingress.test.ts`: one front port routing by server name; the Go agent
+binary enrols and holds its tunnel through the passthrough; an ingress decrypting the agent's
+hostname is refused and named; two clients are counted apart by the gateway while a client's own
+`X-Forwarded-For` is ignored; the live WebSocket upgrades through it. A customer's actual ingress
+(F5, HAProxy, NGINX, a cloud load balancer) still needs its own check at installation: an agent
+enrols, a person signs in, and Home's live updates arrive.
+
+## 11. Owned outside the code
 
 These are the company's to stand up, and each must match this document:
 - the paging tool and the two rotas;
@@ -218,4 +314,6 @@ These are the company's to stand up, and each must match this document:
   apart from every cell);
 - the backup jobs (section 5) and the recovery exercises (section 6);
 - the load cell;
-- the vetting programme.
+- the vetting programme;
+- the HSM: the Luna hardware or service, its partition, its three keys and the commissioning
+  record (section 9).

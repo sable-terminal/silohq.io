@@ -212,7 +212,7 @@ export async function open(deps: StudioDeps, ctx: Context, appId: string, versio
 }
 
 /** The version the viewer may run: a draft by number for its author and co-editors, otherwise the published one (as open). */
-async function runnableVersion(deps: StudioDeps, ctx: Context, appId: string, version: number | undefined): Promise<AppDefinition> {
+export async function runnableVersion(deps: StudioDeps, ctx: Context, appId: string, version: number | undefined): Promise<AppDefinition> {
   const me = member(ctx);
   const row = await inTransaction(deps.databases.pool('control'), me.request, async (db) => {
     const app = await appRepo.findById(db, appId);
@@ -231,6 +231,17 @@ async function runnableVersion(deps: StudioDeps, ctx: Context, appId: string, ve
 }
 
 /**
+ * The app's parameter variables as names its predicates read: every one it declares, unset as null.
+ * A name it does not declare is refused.
+ */
+export function parameterBindings(def: AppDefinition, given: Readonly<Record<string, string | number | boolean | null>>): Record<string, string | number | boolean | null> {
+  const parameterNames = Object.entries(def.variables).filter(([, v]) => v.kind === 'parameter').map(([n]) => n);
+  const unknown = Object.keys(given).filter((n) => !parameterNames.includes(n));
+  if (unknown.length > 0) throw new AppError('validation', `${unknown.join(', ')} ${unknown.length === 1 ? 'is not a parameter' : 'are not parameters'} of this app`, { code: 'studio.parameter_unknown' });
+  return Object.fromEntries(parameterNames.map((n) => [n, given[n] ?? null]));
+}
+
+/**
  * One object set variable of an app, run for the viewer (35.2, 35.6): the definition the version
  * holds, evaluated by the executor under the viewer's own access, with the app's parameter
  * variables bound by name. Only the app's own parameters are bound, and only as values; an unset
@@ -243,11 +254,8 @@ export async function runVariable(deps: StudioDeps, ctx: Context, appId: string,
   if (variable === undefined || variable.kind !== 'objectSet') {
     throw new AppError('not_found', 'the app has no object set variable of that name', { code: 'studio.variable_not_found' });
   }
-  const parameterNames = Object.entries(def.variables).filter(([, v]) => v.kind === 'parameter').map(([n]) => n);
-  const unknown = Object.keys(input.parameters).filter((n) => !parameterNames.includes(n));
-  if (unknown.length > 0) throw new AppError('validation', `${unknown.join(', ')} ${unknown.length === 1 ? 'is not a parameter' : 'are not parameters'} of this app`, { code: 'studio.parameter_unknown' });
-  // Every parameter the app declares is a name the predicate may read: unset is null.
-  const bindings = Object.fromEntries(parameterNames.map((n) => [n, input.parameters[n] ?? null])) as Record<string, never>;
+  const bindings = parameterBindings(def, input.parameters) as Record<string, never>;
+  const parameterNames = Object.keys(bindings);
   const predicate = variable.filter === undefined ? undefined : { cel: variable.filter.cel, properties: [...variable.filter.properties] };
   const definition: SetDefinition = variable.traversal !== undefined && variable.traversal.length > 0
     ? { kind: 'traversal', start: { objectTypeId: variable.objectTypeId, ...(predicate === undefined ? {} : { predicate }) }, path: variable.traversal.map((h) => ({ linkTypeId: h.linkTypeId, direction: h.direction })) }

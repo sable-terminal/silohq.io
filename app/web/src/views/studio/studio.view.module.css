@@ -148,6 +148,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .bars {
   width: 100%;
   border-collapse: collapse;

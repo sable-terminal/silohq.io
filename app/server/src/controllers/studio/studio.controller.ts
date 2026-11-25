@@ -1,7 +1,7 @@
 // studio's endpoints: contracts to the services, nothing more.
 
 import type {
-  approveVersion, archiveApp, copyApp, createApp, getApp, getAppVersion, listApps, listAppShares, listTemplates, openApp, previewApp, publishToScope, runAppVariable, evaluateAppExpressions,
+  approveVersion, archiveApp, copyApp, createApp, getApp, getAppVersion, listApps, listAppShares, listTemplates, openApp, previewApp, publishToScope, runAppVariable, evaluateAppExpressions, appChartSteps,
   returnVersion, revokeAppShare, rollbackApp, saveDraft, shareApp, submitForReview, withdrawPublication, listPublications,
   abandonAppBranch, compareAppVersions, listAppBranches, mergeAppBranch, openAppBranch, saveAppBranchDraft,
   listAppReleases, promoteAppRelease, rollBackAppRelease, exportAppPackage, importAppPackage,
@@ -16,6 +16,7 @@ import type { StudioDeps } from '../../services/studio/deps.service.ts';
 import type { createObjectViewLayout, getObjectViewLayout, listObjectViewLayouts } from '../../contracts/studio/layout.contract.ts';
 import * as layouts from '../../services/studio/layouts.service.ts';
 import * as runtime from '../../services/studio/runtime.service.ts';
+import { chartSteps } from '../../services/studio/chartSteps.service.ts';
 import type { listInheritedApps, reviewInheritedApp, transferApps } from '../../contracts/studio/transfer.contract.ts';
 import * as transfers from '../../services/studio/transfer.service.ts';
 import * as sharing from '../../services/studio/sharing.service.ts';
@@ -102,6 +103,7 @@ export function studioController(deps: StudioDeps) {
     evaluateAppExpressions: {
       handle: ({ params, body }, ctx) => runtime.evaluateExpressions(deps, ctx, params.appId, { version: body.version, values: body.values }),
     } satisfies RouteHandlers<typeof evaluateAppExpressions>,
+    appChartSteps: { handle: ({ params, body }, ctx) => chartSteps(deps, ctx, params.appId, params.widgetId, body) } satisfies RouteHandlers<typeof appChartSteps>,
     shareApp: { handle: (input, ctx) => sharing.share(deps, ctx, input.params.appId, input.body) } satisfies RouteHandlers<typeof shareApp>,
     revokeAppShare: {
       handle: (input, ctx) => sharing.revoke(deps, ctx, input.params.appId, input.params.shareId),

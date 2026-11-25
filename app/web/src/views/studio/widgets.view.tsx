@@ -11,10 +11,11 @@ import { Button } from '../../components/button.component.tsx';
 import { Checkbox, SelectField, TextField } from '../../components/field.component.tsx';
 import { EmptyState, ErrorMessage, Loading } from '../../components/states.component.tsx';
 import { Time } from '../../components/time.component.tsx';
-import { useQuery } from '../../data/query.data.ts';
+import { useMutation, useQuery } from '../../data/query.data.ts';
 import { useVocabulary } from '../../hooks/vocabulary.hook.ts';
 import { formatNumber, plural } from '../../utils/format.util.ts';
 import { ActionForm, ObjectPanel } from '../explorer/object.view.tsx';
+import { StartAnalysis } from '../explorer/start.view.tsx';
 import { ApprovalInbox as Inbox } from '../governance/approvals.view.tsx';
 import { labelOf, useRows, useRuntime, useSelected, type Of, type ResultObject, type Rows } from './runtime.view.ts';
 import styles from './studio.view.module.css';
@@ -166,16 +167,35 @@ export function Chart({ w }: { w: Of<'chart'> }) {
   const max = Math.max(...bars.map((b) => b.value), 1);
   const measure = w.measure.aggregate === 'count' ? 'Objects' : `${AGGREGATE[w.measure.aggregate]} of ${lookup?.propertyName(w.measure.property ?? '') ?? 'a property'}`;
   return (
-    <table className={styles.bars}>
-      <caption className={styles.muted}>{measure}{w.groupBy !== undefined ? ` by ${lookup?.propertyName(w.groupBy) ?? 'a property'}` : ''}{groups.size > 20 ? `; the 20 largest of ${groups.size}` : ''}</caption>
-      <tbody>{bars.map((b) => (
-        <tr key={b.label}>
-          <th scope="row">{w.groupBy !== undefined ? <button type="button" className={styles.rowButton} onClick={() => r.emit(w, 'elementSelected')}>{b.label}</button> : b.label}</th>
-          <td className={styles.barCell}><meter className={styles.bar} min={0} max={max} value={b.value} aria-label={`${b.label}: ${formatNumber(b.value, 2)}`} /></td>
-          <td className={styles.number}>{formatNumber(b.value, 2)}</td>
-        </tr>
-      ))}</tbody>
-    </table>
+    <div className={styles.chart}>
+      <table className={styles.bars}>
+        <caption className={styles.muted}>{measure}{w.groupBy !== undefined ? ` by ${lookup?.propertyName(w.groupBy) ?? 'a property'}` : ''}{groups.size > 20 ? `; the 20 largest of ${groups.size}` : ''}</caption>
+        <tbody>{bars.map((b) => (
+          <tr key={b.label}>
+            <th scope="row">{w.groupBy !== undefined ? <button type="button" className={styles.rowButton} onClick={() => r.emit(w, 'elementSelected')}>{b.label}</button> : b.label}</th>
+            <td className={styles.barCell}><meter className={styles.bar} min={0} max={max} value={b.value} aria-label={`${b.label}: ${formatNumber(b.value, 2)}`} /></td>
+            <td className={styles.number}>{formatNumber(b.value, 2)}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+      <AnalyseChart w={w} />
+    </div>
+  );
+}
+
+/** The chart continued as an analysis (37.8): its set, filter and measure as steps, for the viewer's values and filter controls. */
+function AnalyseChart({ w }: { w: Of<'chart'> }) {
+  const r = useRuntime();
+  const make = useMutation('createWorkspaceAnalysisFromAppChart', { refresh: false });
+  const narrowing = r.narrowing[w.source];
+  const facets = Object.fromEntries(Object.entries(narrowing?.facets ?? {}).filter((e): e is [string, string] => e[1] !== null));
+  return (
+    <StartAnalysis label="Analyse" pending={make.pending} blocked={make.blocked} error={make.error}
+      start={() => make.run({ body: {
+        appId: r.appId, widgetId: w.id, ...(r.version === undefined ? {} : { version: r.version }), parameters: { ...r.parameters },
+        // Only whether a search narrows the set: its words stay in the browser.
+        ...(narrowing === undefined ? {} : { narrowing: { facets, searched: narrowing.search.trim() !== '' } }),
+      } }).then((out) => (out.ok ? out.data : undefined))} />
   );
 }
 

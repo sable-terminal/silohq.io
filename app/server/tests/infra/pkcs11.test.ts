@@ -4,11 +4,16 @@
 // mode (an IV from the caller refused; one generated and returned after the ciphertext and
 // tag, 16 bytes before firmware 7.9.3 and the asked-for length from it; the Crypto User's
 // login), or as a generic module (the caller's IV used), and can drop its session as a
-// network HSM's failover does. Against a real module when one is given: TEST_PKCS11_MODULE
-// (SoftHSM's libsofthsm2.so, say), TEST_PKCS11_PIN and a token in slot 0 holding an AES key
-// labelled silo-wrap and a generic secret labelled silo-mac; skipped otherwise, like the
-// Cloud KMS test. A real Luna is proved at commissioning by the credential service's start-up
-// check, which wraps and unwraps under the profile.
+// network HSM's failover does. Against a real module when one is given (skipped otherwise,
+// like the Cloud KMS test), under the profile the cell will use, so commissioning a Luna proves
+// its Crypto User login and the IV it generates (docs/siloOperations.doc.md section 9):
+//   TEST_PKCS11_MODULE        the vendor library (Luna's libCryptoki2_64.so; SoftHSM's libsofthsm2.so)
+//   TEST_PKCS11_PIN           the user's PIN (Luna: the partition's Crypto User)
+//   TEST_PKCS11_PROFILE       generic (default) or luna
+//   TEST_PKCS11_TOKEN_LABEL   the partition or token by label (required for luna); else TEST_PKCS11_SLOT, default 0
+//   TEST_PKCS11_WRAP_LABEL    the AES wrapping key (default silo-wrap)
+//   TEST_PKCS11_MAC_LABEL     the HMAC key (default silo-mac)
+//   TEST_PKCS11_IMPORT_LABEL  the RSA import key pair, checked when given
 
 import assert from 'node:assert/strict';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
@@ -199,16 +204,33 @@ describe('PKCS#11 HSM (decision 2026-11-14)', () => {
     assert.deepEqual(await wrapper.unwrap(wrapped, binding), dek, 'back once the HSM is');
   });
 
-  test('wraps and unwraps in a real HSM, bound to its context; MACs there', { skip: module === undefined ? 'TEST_PKCS11_MODULE is not set' : false }, async () => {
-    const kms = await pkcs11KeyManagement({ ...generic, pkcs11ModulePath: module, pkcs11Pin: process.env['TEST_PKCS11_PIN'] ?? '1234' });
+  test('wraps and unwraps in a real HSM under the cell\'s profile, bound to its context; MACs there', { skip: module === undefined ? 'TEST_PKCS11_MODULE is not set' : false }, async () => {
+    const env = process.env;
+    const profile = env['TEST_PKCS11_PROFILE'] === 'luna' ? 'luna' : 'generic';
+    const tokenLabel = env['TEST_PKCS11_TOKEN_LABEL'];
+    if (profile === 'luna') assert.ok(tokenLabel !== undefined, 'a Luna partition is named by its label: set TEST_PKCS11_TOKEN_LABEL');
+    const kms = await pkcs11KeyManagement({
+      provider: 'pkcs11_hsm', vaultTransitMount: 'transit', pkcs11ModulePath: module, pkcs11Pin: env['TEST_PKCS11_PIN'] ?? '1234', pkcs11Profile: profile,
+      ...(tokenLabel !== undefined ? { pkcs11TokenLabel: tokenLabel } : { pkcs11Slot: Number(env['TEST_PKCS11_SLOT'] ?? 0) }),
+    });
+    const wrapUri = `pkcs11:object=${env['TEST_PKCS11_WRAP_LABEL'] ?? 'silo-wrap'}`;
     try {
-      assert.equal(await kms.verifyKey(WRAP, 'wrap'), 'ok');
-      const wrapper = kms.wrapper({ id: 'v1', keyUri: WRAP });
+      assert.equal(await kms.verifyKey(wrapUri, 'wrap'), 'ok');
+      const wrapper = kms.wrapper({ id: 'v1', keyUri: wrapUri });
       const dek = Buffer.alloc(32, 7);
       const wrapped = await wrapper.wrap(dek, binding);
       assert.deepEqual(await wrapper.unwrap(wrapped, binding), dek);
       await assert.rejects(wrapper.unwrap(wrapped, Buffer.from('another:binding')), { code: 'kms.pkcs11_hsm.unwrap_refused' });
-      assert.equal((await kms.mac('pkcs11:object=silo-mac', Buffer.from('x'))).length, 32);
+      // Each wrap its own IV, whoever makes it (the host, or a Luna in FIPS mode).
+      assert.notDeepEqual(decodeWrapped(await wrapper.wrap(dek, binding)).iv, decodeWrapped(wrapped).iv);
+      const macUri = `pkcs11:object=${env['TEST_PKCS11_MAC_LABEL'] ?? 'silo-mac'}`;
+      assert.equal(await kms.verifyKey(macUri, 'mac'), 'ok');
+      assert.equal((await kms.mac(macUri, Buffer.from('x'))).length, 32);
+      const importLabel = env['TEST_PKCS11_IMPORT_LABEL'];
+      if (importLabel !== undefined) {
+        assert.equal(await kms.verifyKey(`pkcs11:object=${importLabel}`, 'import'), 'ok');
+        assert.match(await kms.importPublicKey(`pkcs11:object=${importLabel}`), /^-----BEGIN PUBLIC KEY-----/);
+      }
     } finally {
       await kms.close();
     }

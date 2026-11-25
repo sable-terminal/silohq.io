@@ -171,6 +171,7 @@ export const ROUTES = {
   createWarehouse: { method: 'POST', path: '/api/v1/warehouses', keyed: true, session: 'complete', access: { permission: 'silo.create' }, writes: true },
   createWorkbook: { method: 'POST', path: '/api/v1/workbooks', keyed: true, session: 'complete', access: { permission: 'workbook.save' }, writes: true },
   createWorkspaceAnalysis: { method: 'POST', path: '/api/v1/workspace/analyses', keyed: false, session: 'complete', access: { permission: 'ontology.view' }, writes: true },
+  createWorkspaceAnalysisFromAppChart: { method: 'POST', path: '/api/v1/workspace/analyses/from-app-chart', keyed: false, session: 'complete', access: { permission: 'ontology.view' }, writes: true },
   createWorkspaceAnalysisFromTurn: { method: 'POST', path: '/api/v1/workspace/analyses/from-turn', keyed: false, session: 'complete', access: { permission: 'ontology.view' }, writes: true },
   currentSession: { method: 'GET', path: '/api/v1/session', keyed: false, session: 'mfa_pending', access: 'open', writes: false },
   decideAllowlistRequest: { method: 'POST', path: '/api/v1/actions/actuation-allowlist/requests/:requestId/decision', keyed: false, session: 'complete', access: 'service', writes: true },
@@ -926,6 +927,7 @@ export interface Routes {
   createWarehouse: typeof m36.createWarehouseRoute;
   createWorkbook: typeof m37.createWorkbook;
   createWorkspaceAnalysis: typeof m37.createWorkspaceAnalysis;
+  createWorkspaceAnalysisFromAppChart: typeof m37.createWorkspaceAnalysisFromAppChart;
   createWorkspaceAnalysisFromTurn: typeof m37.createWorkspaceAnalysisFromTurn;
   currentSession: typeof m27.currentSession;
   decideAllowlistRequest: typeof m2.decideAllowlistRequest;

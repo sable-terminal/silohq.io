@@ -12,6 +12,7 @@
 // so a plan is never half-run where no query path is deployed. Tests give a fake.
 
 import type { ClarificationOption, StoredScope } from '../../contracts/ask/thread.contract.ts';
+import type { KeptStep } from '../../contracts/compile/analysis.contract.ts';
 import type { CompiledFailure, CompiledIntent, CompiledSchedule } from '../../contracts/compile/compile.contract.ts';
 import type { RunOutcomeView } from '../../contracts/workspace/view.contract.ts';
 import type { RequestContext } from '../../infra/postgres.infra.ts';
@@ -59,6 +60,8 @@ export type CompileOutcome =
     rephraseUncharged: boolean;
     /** When compile also ran the plan (an answer), its outcome: the plan is not run again. */
     ran?: RunOutcomeView | undefined;
+    /** A harder question compiled as a chain (37.8): its steps, which the holder records; the manifest is the chain's. */
+    chain?: Omit<KeptStep, 'plans'>[] | undefined;
   }
   | { outcome: 'clarification'; options: ClarificationOption[] }
   /** A change the question asks for (42.9): compiled and charged, never executed; Ask makes it a draft. */

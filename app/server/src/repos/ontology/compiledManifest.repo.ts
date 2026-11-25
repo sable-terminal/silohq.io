@@ -26,6 +26,17 @@ export const compiledManifestRepo = {
     return findRow(db, compiledManifestTable, key);
   },
 
+  /** Of these manifests, the chains (spec 37.8): each one's step operations in order. */
+  async analysisOperations(db: Queryable, ids: readonly CompiledManifest['id'][]): Promise<Map<string, string[]>> {
+    if (ids.length === 0) return new Map();
+    const { rows } = await db.query(
+      `select m.id, coalesce((select array_agg(s.step->>'operation' order by s.position)
+                                from jsonb_array_elements(m.manifest->'steps') with ordinality as s(step, position)), '{}') as operations
+         from ontology.compiled_manifests m
+        where m.id = any($1::uuid[]) and m.kind = 'analysis'`, [[...new Set(ids)]]);
+    return new Map((rows as { id: string; operations: string[] }[]).map((r) => [r.id, r.operations]));
+  },
+
   /** The kind of branch the plan's ontology version is on (spec 25.3): 'main', or a branch's kind. */
   async branchKindOf(db: Queryable, id: CompiledManifest['id']): Promise<string | undefined> {
     const { rows } = await db.query(

@@ -22,7 +22,9 @@
 
 import { z } from 'zod';
 import { defineContract } from '../endpoint.contract.ts';
+import { analysisStep } from '../compile/analysis.contract.ts';
 import { RUN_TIMEOUT_MS, runOutcome } from '../executor/result.contract.ts';
+import { planParameters, refusal } from '../planner/plan.contract.ts';
 import { shareGrantee } from '../workspace/sharing.contract.ts';
 import { validationFinding } from './definition.contract.ts';
 import { fileView } from '../files/file.contract.ts';
@@ -241,6 +243,9 @@ export const openApp = defineContract({
   response: openedApp,
 });
 
+/** An app's parameter variables, by name: a value, or null when unset. */
+const parameterValues = z.record(z.string().regex(/^[a-z][A-Za-z0-9_]{0,39}$/), z.union([z.string().max(1_000), z.number(), z.boolean(), z.null()])).default({});
+
 /**
  * One of an app's object set variables run for the viewer (35.2, 35.6; W9): the definition the
  * version holds, under the viewer's own access, its parameter variables' values bound by name.
@@ -257,11 +262,40 @@ export const runAppVariable = defineContract({
     /** Property identities to show besides the title. */
     select: z.array(z.uuid()).max(50).default([]),
     /** The app's parameter variables, by name: a value, or null when unset. */
-    parameters: z.record(z.string().regex(/^[a-z][A-Za-z0-9_]{0,39}$/), z.union([z.string().max(1_000), z.number(), z.boolean(), z.null()])).default({}),
+    parameters: parameterValues,
   }),
   response: runOutcome,
   timeoutMs: RUN_TIMEOUT_MS,
   maxBodyBytes: 16_384,
+});
+
+/** A chart of an app, as its viewer has it: the version, their parameter values and their filter controls' narrowing. */
+export const chartAsViewed = z.strictObject({
+  version: z.int().min(1).optional(),
+  parameters: parameterValues,
+  /** The filter controls over the chart's set: each facet's chosen value, and whether a search narrows it (its words are not sent). */
+  narrowing: z.strictObject({ facets: z.record(z.uuid(), z.string().max(1_000)).default({}), searched: z.boolean().default(false) }).optional(),
+});
+
+/**
+ * A chart of an app as the steps of an analysis (spec 37.8: an analysis is built from Explorer, an
+ * object view link group, Ask or a Studio chart): its set's type with the filter made typed
+ * filters, each link the set follows, the viewer's facet narrowing, then the chart's measure by its
+ * grouping. The app's literals and the viewer's parameter values become the steps' parameters,
+ * never written into them (analysis_steps hold placeholders only). A filter with no typed form, or
+ * one that reads now, is said not to be steps, naming the part, rather than changed; a step that
+ * keeps a different set from the chart's says so in a note.
+ */
+export const appChartSteps = defineContract({
+  service: 'studio', name: 'appChartSteps', method: 'POST', path: '/v1/studio/apps/:appId/charts/:widgetId/steps', callers: ['workspace'],
+  context: 'organisation', idempotency: 'none',
+  params: z.strictObject({ appId: z.uuid(), widgetId: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/) }),
+  body: chartAsViewed,
+  response: z.discriminatedUnion('outcome', [
+    z.object({ outcome: z.literal('steps'), steps: z.array(analysisStep).min(1), parameters: planParameters, notes: z.array(z.string()) }),
+    z.object({ outcome: z.literal('not_steps'), refusal }),
+  ]),
+  maxBodyBytes: 32_768,
 });
 
 /** A runtime value of a variable, as the app's expressions read it: a parameter's value, a selection's object ids, otherwise null. */

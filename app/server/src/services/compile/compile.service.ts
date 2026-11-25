@@ -53,8 +53,11 @@ import type { PlanCall } from '../planner/deps.service.ts';
 import { activeVersion, manifestOf } from '../planner/manifests.service.ts';
 import { localToday } from '../planner/period.service.ts';
 import {
-  INSTRUCTIONS, INTENT_INSTRUCTIONS, modelOutputSchema, modelOutputWithIntentSchema, planInNames, translate, type ModelOutput,
+  CHAIN_INSTRUCTIONS, INSTRUCTIONS, INTENT_INSTRUCTIONS, modelOutputSchema, modelOutputWithChainSchema, modelOutputWithIntentAndChainSchema, modelOutputWithIntentSchema,
+  planInNames, translate, type ModelOutput,
 } from './modelPlan.service.ts';
+import { compileChain, runChainSteps } from './analysis.service.ts';
+import { analysisStep } from '../../contracts/compile/analysis.contract.ts';
 import { bindIntent } from './intent.service.ts';
 import { columnKey, modelVocabulary, vocabularyView } from './vocabulary.service.ts';
 
@@ -72,6 +75,9 @@ export interface CompileDeps {
 const MODEL_OUTPUT = outputSpec('QueryPlan', modelOutputSchema);
 /** Where a change may be asked for (Ask, 42.9): a plan, or an intent. */
 const MODEL_OUTPUT_WITH_INTENT = outputSpec('QueryPlanOrIntent', modelOutputWithIntentSchema);
+/** Where a chain may be the answer too (Ask's harder question, 37.8). */
+const MODEL_OUTPUT_WITH_CHAIN = outputSpec('QueryPlanOrAnalysis', modelOutputWithChainSchema);
+const MODEL_OUTPUT_WITH_INTENT_AND_CHAIN = outputSpec('QueryPlanIntentOrAnalysis', modelOutputWithIntentAndChainSchema);
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 
 const callOf = (ctx: HandlerContext, purposeSessionIds?: readonly string[]): PlanCall => ({
@@ -224,8 +230,8 @@ export async function execute(deps: CompileDeps, ctx: HandlerContext, plan: Quer
 
 /** The model call, with one re-prompt after a schema failure and no data in it (spec 26.5). */
 async function askModel(deps: CompileDeps, ctx: HandlerContext, question: string, access: ReaderAccess, priorPlans: string[], focusTypeId: string | undefined,
-  intents: boolean, aiAgent?: QuestionInput['aiAgent']): Promise<ModelOutput | Refusal> {
-  const instructions = intents ? INTENT_INSTRUCTIONS : INSTRUCTIONS;
+  intents: boolean, aiAgent?: QuestionInput['aiAgent'], chains = false): Promise<ModelOutput | Refusal> {
+  const instructions = `${intents ? INTENT_INSTRUCTIONS : INSTRUCTIONS}${chains ? `\n${CHAIN_INSTRUCTIONS}` : ''}`;
   const organisationId = ctx.request.organisationId!;
   const { organisation, columns } = await inTransaction(deps.databases.pool('control'), ctx.request, async (db) => ({
     organisation: await organisationRepo.findById(db, organisationId),
@@ -256,14 +262,15 @@ async function askModel(deps: CompileDeps, ctx: HandlerContext, question: string
       ...(organisation.financialYearStartMonth === null ? {} : { fiscalYearStartMonth: organisation.financialYearStartMonth }),
       weekStartsOn: WEEKDAYS[organisation.weekStartDay - 1]!,
     },
-    output: intents ? MODEL_OUTPUT_WITH_INTENT : MODEL_OUTPUT,
+    output: chains ? (intents ? MODEL_OUTPUT_WITH_INTENT_AND_CHAIN : MODEL_OUTPUT_WITH_CHAIN) : intents ? MODEL_OUTPUT_WITH_INTENT : MODEL_OUTPUT,
   };
   for (const attempt of [1, 2]) {
     try {
       const reply = await deps.services.call(callModel, {
         body: { ...body, instructions: attempt === 1 ? instructions : `${instructions}\nThe previous output did not match the required structure. Return only that structure.` },
       }, { ...opts(ctx), timeoutMs: 60_000 });
-      return intents ? parseOutput(modelOutputWithIntentSchema, reply.output) : parseOutput(modelOutputSchema, reply.output);
+      const schema = chains ? (intents ? modelOutputWithIntentAndChainSchema : modelOutputWithChainSchema) : intents ? modelOutputWithIntentSchema : modelOutputSchema;
+      return parseOutput(schema, reply.output) as ModelOutput;
     } catch (error) {
       if (!isAppError(error)) throw error;
       if (error.code === 'model.output_invalid' && attempt === 1) continue;
@@ -298,6 +305,8 @@ export interface QuestionInput {
   focus?: { objectTypeId: string } | undefined;
   /** The question may ask for a change (Ask, 42.9). */
   intents?: boolean | undefined;
+  /** The question may compile into a chain of analysis steps (37.8): an advanced compile. */
+  chains?: boolean | undefined;
   /** Asked of an AI agent (D236): its brief, and the types it works with. */
   aiAgent?: { id: string; name: string; brief: string; objectTypeIds: string[]; tools: string[] } | undefined;
   chosen?: { about: 'object_type' | 'time_field' | 'route' | 'property'; elementId: string; rejectedIds: string[] } | undefined;
@@ -419,13 +428,13 @@ export async function compileQuestion(deps: CompileDeps, ctx: HandlerContext, in
   });
 
   // Model, then compile's two checks.
-  let output = await askModel(deps, ctx, input.question, narrowing?.access ?? access, prior, input.focus?.objectTypeId, input.intents === true, input.aiAgent);
+  let output = await askModel(deps, ctx, input.question, narrowing?.access ?? access, prior, input.focus?.objectTypeId, input.intents === true, input.aiAgent, input.chains === true);
   if (isRefusal(output)) return refused(output);
   let translated = translate(output, narrowing?.access ?? access, input.chosen);
   let widened = false;
   if (narrowing !== undefined && 'refusal' in translated && WIDEN_ON.has(translated.refusal.code)) {
     widened = true;
-    output = await askModel(deps, ctx, input.question, access, prior, input.focus?.objectTypeId, input.intents === true, input.aiAgent);
+    output = await askModel(deps, ctx, input.question, access, prior, input.focus?.objectTypeId, input.intents === true, input.aiAgent, input.chains === true);
     if (isRefusal(output)) return refused(output);
     translated = translate(output, access, input.chosen);
   }
@@ -522,6 +531,40 @@ export async function compileQuestion(deps: CompileDeps, ctx: HandlerContext, in
       },
     };
   }
+  // A chain (37.8): an advanced compile, kept as an analysis manifest with its values under the
+  // binding, charged once now that the chain plan exists, then (to answer) run step by step.
+  if ('chain' in translated) {
+    if (!agentMay('answer')) return refused({ code: 'compile.ai_agent_tool', reason: 'this AI agent may not answer questions' });
+    if (!await allowed(deps, ctx, 'query.advanced', input.purposeSessionIds)) {
+      return refused({
+        code: 'compile.advanced_not_permitted', reason: 'the question needs a chain of steps, an advanced compile your seat does not include',
+        element: { kind: 'plan' }, remedy: 'ask it as one question at a time, or ask for a Business or Enterprise seat',
+      });
+    }
+    const bindingId = input.bindingId ?? uuidv7();
+    // Typed as any chain's steps are, with each step's default bound.
+    const typed = analysisStep.array().safeParse(translated.chain.steps);
+    if (!typed.success) {
+      return refused({ code: 'compile.plan_invalid', reason: 'the question compiled to steps that do not hold together, and they are refused rather than repaired', element: { kind: 'plan' } });
+    }
+    const kept = await compileChain(deps, ctx, { steps: typed.data, parameters: translated.chain.parameters, bindingId }, versionId);
+    if (kept.outcome === 'refusal') {
+      const r = kept.refused.refusal;
+      if (r.bound !== undefined) await event('plan_bounds_refused', { code: r.code, bound: r.bound.name, step: kept.refused.position });
+      return refused({ ...r, reason: `step ${kept.refused.position} (${kept.refused.operation.replace('_', ' ')}): ${r.reason}` });
+    }
+    await event('plan_validated', {
+      compile_class: 'advanced', steps: kept.steps.length, hops: kept.steps.filter((x) => x.operation === 'traverse').length, nodes: 0,
+      narrowed: narrowing !== undefined, widened, analysis: true,
+    }, kept.manifestId);
+    const charged = await chargeFor(kept.manifestId, 'advanced');
+    if (isRefusal(charged)) return refused(charged);
+    const steps = kept.steps.map(({ plans: _plans, ...rest }) => rest);
+    if (!input.execute) return { outcome: 'analysis', manifestId: kept.manifestId, compileClass: 'advanced', charge: charged, steps };
+    const ran = await runChainSteps(deps, ctx, kept.manifestId, { bindingId, trigger: 'authored', purposeSessionIds: input.purposeSessionIds });
+    return { outcome: 'analysis', manifestId: kept.manifestId, compileClass: 'advanced', charge: charged, steps, ran: ran.steps };
+  }
+
   const { plan, parameters } = translated;
   const compileClass = classOf(plan);
   if (compileClass === 'advanced' && !await allowed(deps, ctx, 'query.advanced', input.purposeSessionIds)) {
@@ -603,6 +646,16 @@ export async function compileStructured(deps: CompileDeps, ctx: HandlerContext, 
 /** A stored plan run with its bound values, under the caller's access now. Never metered. */
 export async function runCompiled(deps: CompileDeps, ctx: HandlerContext, planId: string, input: z.output<typeof runCompiledPlan.body>)
   : Promise<z.output<typeof runCompiledPlan.response>> {
+  // A chain kept from a question (37.8): run step by step; its answer is the last step's (a comparison's first side, its second beside it in Analysis).
+  const row = await inTransaction(deps.databases.pool('control'), ctx.request, (db) => compiledManifestRepo.findById(db, planId), { readOnly: true });
+  if (row?.kind === 'analysis') {
+    const ran = await runChainSteps(deps, ctx, planId, { bindingId: input.bindingId, trigger: input.trigger, purposeSessionIds: input.purposeSessionIds });
+    const refused = ran.steps.find((x) => x.outcome === 'refused');
+    if (refused?.outcome === 'refused') return { outcome: 'refusal', refusal: refused.refusal };
+    const last = ran.last[0];
+    if (last === undefined) return { outcome: 'refusal', refusal: { code: 'analysis.not_run', reason: 'the chain has no step that ran' } };
+    return { outcome: 'answer', result: last };
+  }
   const stored = await compiledPlan(deps, ctx, planId);
   const parameters = await boundParameters(deps, ctx, planId, input.bindingId);
   if (isRefusal(parameters)) return { outcome: 'refusal', refusal: parameters };

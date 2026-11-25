@@ -18,6 +18,7 @@
 // Scope crosses as references and definitions, never as values shown on the page.
 
 import { z } from 'zod';
+import { ANALYSIS_OPERATIONS } from '../compile/analysis.contract.ts';
 import { defineContract } from '../endpoint.contract.ts';
 import { graphView } from '../lineage/lineage.contract.ts';
 import { findingView } from '../recognition/finding.contract.ts';
@@ -98,6 +99,11 @@ export const turnView = z.object({
   outcome: z.enum(['answer', 'refusal', 'clarification', 'proposal']),
   tool: z.enum(ASK_TOOLS),
   manifestId: z.uuid().nullable(),
+  /**
+   * An answer compiled as a chain of analysis steps (a harder question, 37.8): its operations in
+   * order. It opens in Analysis with the turn's id as its values; its result is the last step's.
+   */
+  chain: z.object({ operations: z.array(z.enum(ANALYSIS_OPERATIONS)) }).nullable(),
   refusalReason: z.enum(REFUSAL_REASONS).nullable(),
   /** For a refusal: a narrowing that would succeed, as compile stated it (vocabulary only). */
   narrowing: z.string().max(500).nullable(),

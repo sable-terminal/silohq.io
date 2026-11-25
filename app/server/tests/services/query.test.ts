@@ -30,7 +30,7 @@ import { service as compileService } from '../../src/routes/compile/index.route.
 import { getOrganisationCalendar, setOrganisationCalendar } from '../../src/contracts/compile/calendar.contract.ts';
 import { service as simulationService } from '../../src/routes/simulation/index.route.ts';
 import { createAskService } from '../../src/routes/ask/index.route.ts';
-import { askQuestion, createThread } from '../../src/contracts/ask/thread.contract.ts';
+import { askQuestion, createThread, rerunTurn } from '../../src/contracts/ask/thread.contract.ts';
 import { createAnalysisFromTurn, readAnalysis, runAnalysis as runWorkspaceAnalysis } from '../../src/contracts/workspace/analysis.contract.ts';
 import { createWorkspaceService } from '../../src/routes/workspace/index.route.ts';
 import { createActionsService } from '../../src/routes/actions/index.route.ts';
@@ -1471,6 +1471,74 @@ describe('an Ask answer continued as an analysis (spec 37.8)', () => {
     assert.equal(step.outcome === 'result' && step.results[0]!.total, 2, 'i1 and i3: open, and issued this year');
     await assert.rejects(client.call(createAnalysisFromTurn, { body: { threadId: thread.id, sequence: asked.turn.sequence } }, cell.as(viewer)),
       { code: 'workspace.turn_not_found' }, 'never another member\'s answer, nor their values');
+  });
+});
+
+describe('a harder question compiled as a chain of steps (spec 37.8, 26.10)', () => {
+  /** North suppliers, their open invoices, the total by supplier, then the invoices behind s1: in names, with the question's values. */
+  const chainReply = (property = 'region') => ({
+    outcome: 'analysis',
+    steps: [
+      { operation: 'filter', objectType: 'supplier', filters: [{ property, op: 'eq', value: 'north' }] },
+      { operation: 'traverse', input: 1, link: 'supplier_invoices', filters: [{ property: 'status', op: 'eq', value: 'open' }] },
+      { operation: 'group', input: 2, groupBy: [{ property: 'supplier_ref' }], measures: [{ fn: 'sum', property: 'total', as: 'total' }] },
+      { operation: 'select', input: 3, key: [{ property: 'supplier_ref', value: 's1' }] },
+    ],
+  });
+
+  /** The model's replies for one question: a narrowed compile that cannot answer is widened and asks again. */
+  const replies = (...r: unknown[]) => {
+    modelReplies.length = 0;
+    modelReplies.push(...r);
+  };
+
+  test('charged once as an advanced compile, run step by step, kept as the turn\'s answer; re-run free; continued in Analysis with its values', async () => {
+    if (!askRunning) {
+      await cell.start(createAskService(), 'ask', 'test_app');
+      askRunning = true;
+    }
+    const client = cell.client('gateway');
+    const thread = await client.call(createThread, { body: {} }, keyed(root));
+    const ask = (advanced: boolean) => client.call(askQuestion, {
+      params: { threadId: thread.id }, body: { question: 'North suppliers\' open invoices, total by supplier, and the invoices behind s1', advanced },
+    }, keyed(root));
+
+    // Not a harder question: a chain is not what compile asked for, so it is not taken (the model is asked again, then refused).
+    replies(chainReply(), chainReply());
+    const plain = await ask(false);
+    assert.deepEqual([plain.turn.outcome, plain.turn.tokensCharged], ['refusal', 0]);
+
+    replies(chainReply(), chainReply());
+    const asked = await ask(true);
+    assert.equal(asked.turn.outcome, 'answer', JSON.stringify([asked.turn.refusalReason, asked.turn.narrowing]));
+    assert.deepEqual(asked.turn.chain, { operations: ['filter', 'traverse', 'group', 'select'] });
+    assert.equal(asked.turn.tokensCharged, 3, 'an advanced compile, charged once when the chain exists');
+    const answerRef = asked.turn.resultRef!;
+    const last = await client.call(readResult, { params: { queryId: answerRef } }, cell.as(root));
+    assert.equal(last.total, 1, 'the invoices behind s1 among the north suppliers\' open ones: i1');
+    const { rows: steps } = await cell.migrate.query('select position, operation from workspace.analysis_steps where manifest_id = $1 order by position', [asked.turn.manifestId]);
+    assert.deepEqual(steps.map((r) => r.operation), ['filter', 'traverse', 'group', 'select'], 'the steps recorded as any analysis\'s are');
+    const { rows: kept } = await cell.migrate.query('select manifest::text as manifest from ontology.compiled_manifests where id = $1', [asked.turn.manifestId]);
+    assert.ok(!kept[0].manifest.includes('north') && !kept[0].manifest.includes('s1'), 'the values are parameters, never in the chain');
+
+    const again = await client.call(rerunTurn, { params: { threadId: thread.id, sequence: asked.turn.sequence } }, keyed(root));
+    assert.deepEqual([again.refusalReason, again.resultRef !== null], [null, true], JSON.stringify(again));
+    assert.equal((await client.call(readResult, { params: { queryId: again.resultRef! } }, cell.as(root))).total, 1);
+
+    const continued = await client.call(createAnalysisFromTurn, { body: { threadId: thread.id, sequence: asked.turn.sequence } }, cell.as(root));
+    assert.equal(continued.outcome, 'analysis', JSON.stringify(continued).slice(0, 300));
+    if (continued.outcome !== 'analysis') return;
+    assert.equal(continued.manifestId, asked.turn.manifestId, 'the same chain');
+    const opened = await client.call(readAnalysis, { params: { manifestId: continued.manifestId }, query: { analysisId: continued.analysisId } }, cell.as(root));
+    assert.deepEqual(Object.values(opened.parameters ?? {}).sort(), ['north', 'open', 's1'], 'its values, copied for the asker');
+  });
+
+  test('a chain naming what the asker cannot see is refused, free, as a plan would be', async () => {
+    const client = cell.client('gateway');
+    const thread = await client.call(createThread, { body: {} }, keyed(root));
+    replies(chainReply('colour'), chainReply('colour'));
+    const out = await client.call(askQuestion, { params: { threadId: thread.id }, body: { question: 'North suppliers by colour', advanced: true } }, keyed(root));
+    assert.deepEqual([out.turn.outcome, out.turn.tokensCharged, out.turn.chain], ['refusal', 0, null]);
   });
 });
 

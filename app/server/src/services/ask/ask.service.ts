@@ -31,9 +31,9 @@ import { inTransaction, type Databases, type Queryable, type RequestContext } fr
 import type { ServiceClient } from '../../infra/serviceClient.infra.ts';
 import type { AskThread } from '../../models/workspace/askThread.model.ts';
 import type { AskTurn } from '../../models/workspace/askTurn.model.ts';
-import { objectSetRepo } from '../../repos/ontology/index.repo.ts';
+import { compiledManifestRepo, objectSetRepo } from '../../repos/ontology/index.repo.ts';
 import { outboxRepo } from '../../repos/platform/index.repo.ts';
-import { aiAgentRepo, askThreadRepo, askTurnRepo, askWebPolicyRepo } from '../../repos/workspace/index.repo.ts';
+import { aiAgentRepo, analysisStepRepo, askThreadRepo, askTurnRepo, askWebPolicyRepo } from '../../repos/workspace/index.repo.ts';
 import type { AiAgent } from '../../models/workspace/aiAgent.model.ts';
 import { aiAgentHeld } from '../workspace/aiAgents.service.ts';
 import { organisationRepo } from '../../repos/iam/index.repo.ts';
@@ -191,9 +191,25 @@ export function threadViewOf(thread: AskThread): ThreadView {
   };
 }
 
+/** A chain's steps, recorded once per manifest (37.8). */
+async function recordChainSteps(db: Queryable, organisationId: string, manifestId: string, steps: NonNullable<Extract<CompileOutcome, { outcome: 'plan' }>['chain']>): Promise<void> {
+  await analysisStepRepo.insertMissing(db, steps.map((x) => ({
+    id: uuidv7(), organisationId, manifestId, position: x.position, operation: x.operation, inputSteps: x.inputSteps,
+    definition: x.step as never, outputKind: x.outputKind, bound: x.bound,
+  })));
+}
+
+/** Of these turns, the answers compiled as chains (37.8): each one's step operations, by manifest. */
+async function chainsOf(db: Queryable, turns: readonly AskTurn[]): Promise<Map<string, string[]>> {
+  const ids = turns.filter((t) => t.outcome === 'answer' && t.manifestId !== null).map((t) => t.manifestId!);
+  return compiledManifestRepo.analysisOperations(db, ids);
+}
+
 function turnViewOf(turn: AskTurn, extra: {
   narrowing?: string | null; incompleteSources?: string[]; draft?: TurnView['draft']; explanation?: TurnView['explanation'];
+  chains?: ReadonlyMap<string, string[]>;
 } = {}): TurnView {
+  const operations = turn.outcome === 'answer' && turn.manifestId !== null ? extra.chains?.get(turn.manifestId) : undefined;
   const proposed = turn.proposal as ({ kind?: string } & Record<string, unknown>) | null;
   const { kind: _kind, ...cron } = proposed?.kind === 'cron' ? proposed : { kind: undefined };
   return {
@@ -205,6 +221,7 @@ function turnViewOf(turn: AskTurn, extra: {
     ...(extra.draft === undefined ? {} : { draft: extra.draft }),
     outsideContext: (turn.outsideContext ?? null) as TurnView['outsideContext'],
     id: turn.id, sequence: turn.sequence, outcome: turn.outcome, tool: turn.tool as TurnView['tool'], manifestId: turn.manifestId,
+    chain: operations === undefined ? null : { operations: operations as NonNullable<TurnView['chain']>['operations'] },
     refusalReason: turn.refusalReason, narrowing: extra.narrowing ?? null,
     clarificationOptions: turn.clarificationOptions === null ? null : turn.clarificationOptions as ClarificationOption[],
     resultRef: turn.resultRef, incompleteSources: extra.incompleteSources ?? [], tokensCharged: turn.tokensCharged,
@@ -283,7 +300,9 @@ export async function getThread(deps: AskDeps, ctx: Context, threadId: string): 
   const me = member(ctx);
   return inTransaction(deps.databases.pool('control'), me.request, async (db) => {
     const thread = await ownThread(db, me, threadId, false);
-    return { thread: threadViewOf(thread), turns: (await askTurnRepo.listForThread(db, thread.id)).map((t) => turnViewOf(t)) };
+    const turns = await askTurnRepo.listForThread(db, thread.id);
+    const chains = await chainsOf(db, turns);
+    return { thread: threadViewOf(thread), turns: turns.map((t) => turnViewOf(t, { chains })) };
   }, { readOnly: true });
 }
 
@@ -480,6 +499,7 @@ export async function ask(deps: AskDeps, ctx: Context, threadId: string, input: 
       await recordEvent(db, me, ctx.correlationId, 'ask_refused', resource, { sequence, reason: compiled.reason });
     } else if (run?.outcome === 'refused' && run.reason in RUN_REFUSALS) {
       // Refused at execution (a bound only the data could show): a finished refusal.
+      if (compiled.outcome === 'plan' && compiled.chain !== undefined) await recordChainSteps(db, me.organisationId, compiled.manifestId, compiled.chain);
       turn = await askTurnRepo.insert(db, {
         ...base, outcome: 'refusal', refusalReason: RUN_REFUSALS[run.reason as keyof typeof RUN_REFUSALS], manifestId: compiled.manifestId, tool: answeredWith,
       });
@@ -488,6 +508,8 @@ export async function ask(deps: AskDeps, ctx: Context, threadId: string, input: 
       });
     } else if (compiled.outcome === 'plan') {
       incomplete = run?.outcome === 'result' ? run.incompleteSources : [];
+      // A chain (37.8): its steps recorded as any analysis's are, once per manifest (they are immutable).
+      if (compiled.chain !== undefined) await recordChainSteps(db, me.organisationId, compiled.manifestId, compiled.chain);
       turn = await askTurnRepo.insert(db, {
         ...base, outcome: 'answer', manifestId: compiled.manifestId, resultRef: run?.outcome === 'result' ? run.resultRef : null,
         tool: answeredWith, tokensCharged: compiled.tokensCharged, outsideContext: outside as never,
@@ -517,7 +539,7 @@ export async function ask(deps: AskDeps, ctx: Context, threadId: string, input: 
       });
     }
     const updated = (await askThreadRepo.update(db, thread.id, { lastSequence: sequence, lastActivityAt: now }))!;
-    return { thread: threadViewOf(updated), turn: turnViewOf(turn, { narrowing, incompleteSources: incomplete, draft }) };
+    return { thread: threadViewOf(updated), turn: turnViewOf(turn, { narrowing, incompleteSources: incomplete, draft, chains: await chainsOf(db, [turn]) }) };
   });
 }
 
@@ -639,7 +661,7 @@ export async function readTurn(deps: AskDeps, ctx: Context, threadId: string, se
     const thread = await ownThread(db, me, threadId, false);
     const turn = await askTurnRepo.findBySequence(db, thread.id, sequence);
     if (!turn) throw new AppError('not_found', 'no such turn', { code: 'ask.turn_not_found' });
-    return { thread: threadViewOf(thread), turn: turnViewOf(turn) };
+    return { thread: threadViewOf(thread), turn: turnViewOf(turn, { chains: await chainsOf(db, [turn]) }) };
   }, { readOnly: true });
 }
 

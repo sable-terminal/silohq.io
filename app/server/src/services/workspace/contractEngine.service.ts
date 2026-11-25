@@ -14,6 +14,8 @@
 //   marked sends the earlier turn's plan, so metering's window applies (spec 73.2).
 // - Values bound at compile are kept under the turn's id (a binding) and replayed with the
 //   plan by runCompiledPlan; a view saved from a turn copies the turn's binding.
+// - A harder question may compile into a chain of analysis steps (37.8), charged as an advanced
+//   compile: Ask keeps it as an answer whose manifest is the chain, its result the last step's.
 // - A saved object set runs through the executor's runObjectSet.
 // - `reduced` is the executor's: a field policy shaped the answer.
 
@@ -70,6 +72,8 @@ export function createContractEngine(services: ServiceClient): QueryEngine {
           // A change may be asked for in Ask (42.9); finding objects is never one.
           // An AI agent that proposes neither a change nor a Cron is not offered them (D236).
           intents: request.tool !== 'find_objects' && (request.aiAgent === undefined || request.aiAgent.tools.some((t) => t === 'propose_action' || t === 'propose_cron')),
+          // A harder question (36.10) may compile into a chain of steps (37.8): an advanced compile, the asker holding query.advanced.
+          chains: request.advanced && request.tool === 'answer',
           ...(request.rephraseOf === undefined ? {} : { rephraseOf: request.rephraseOf }),
           ...(request.aiAgent === undefined ? {} : { aiAgent: request.aiAgent }),
           ...(request.scope?.kind === 'object' ? { focus: { objectTypeId: request.scope.objectTypeId } } : {}),
@@ -98,6 +102,19 @@ export function createContractEngine(services: ServiceClient): QueryEngine {
           const tokensCharged = out.charge.charged ? Number(out.charge.weight) : 0;
           const rephraseUncharged = !out.charge.charged && out.charge.reason === 'rephrase_window';
           return { outcome: 'schedule', schedule: out.schedule, compileClass: out.compileClass, tokensCharged, rephraseUncharged };
+        }
+        case 'analysis': {
+          // A chain answers with its last step (a comparison's first side); it runs again whole, free, and opens in Analysis.
+          const tokensCharged = out.charge.charged ? Number(out.charge.weight) : 0;
+          const rephraseUncharged = !out.charge.charged && out.charge.reason === 'rephrase_window';
+          const refused = out.ran?.find((x) => x.outcome === 'refused');
+          const last = out.ran?.at(-1);
+          const ran: RunOutcomeView | undefined = refused?.outcome === 'refused'
+            ? { outcome: 'refused', reason: runRefusalOf(refused.refusal), invalidSinceVersionId: null }
+            : last?.outcome === 'result'
+              ? { outcome: 'result', resultRef: last.results[0]!.queryId, ranAt: last.results[0]!.computedAt, reduced: last.results.some((r) => r.reduced), incompleteSources: [] }
+              : undefined;
+          return { outcome: 'plan', manifestId: out.manifestId, compileClass: out.compileClass, tokensCharged, rephraseUncharged, ran, chain: out.steps };
         }
         case 'plan':
         case 'answer': {
