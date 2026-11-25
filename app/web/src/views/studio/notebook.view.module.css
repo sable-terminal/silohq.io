@@ -1,0 +1,16 @@
+/* Notebooks (D239): cells in order, each with what it computed. */
+
+.cells { margin: var(--space-4) 0; padding: 0; list-style: none; display: grid; gap: var(--space-3); }
+.cell { padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); display: grid; gap: var(--space-2); }
+.cellBar { display: flex; gap: var(--space-3); align-items: baseline; font-size: 13px; }
+.kind { font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
+.text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.scroll { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+.chart { margin: 0; }
+.svg { width: 100%; height: auto; max-width: 720px; }
+.bar { fill: var(--accent); }
+.line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.point { fill: var(--accent); fill-opacity: 0.7; }
+.axis { stroke: var(--border-strong); stroke-width: 1; }
+.axisLabel { fill: var(--text-muted); font: 400 11px var(--font-sans); }
+.value { fill: var(--text); font: 400 11px var(--font-sans); }

@@ -1,0 +1,79 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Ledger API", "version": "2.0.0" },
+  "servers": [{ "url": "https://ledger.example/" }],
+  "security": [{ "token": [] }],
+  "paths": {
+    "/v2/customers": {
+      "get": {
+        "summary": "List customers",
+        "parameters": [{ "name": "cursor", "in": "query", "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "A page of customers",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CustomerPage" } } }
+          }
+        }
+      }
+    },
+    "/v2/customers/{id}": {
+      "get": {
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "One customer", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Customer" } } } } }
+      }
+    },
+    "/v2/invoices": {
+      "get": {
+        "summary": "List invoices",
+        "parameters": [
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of invoices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Invoice" } },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "token": { "type": "http", "scheme": "bearer" } },
+    "schemas": {
+      "Meta": { "type": "object", "properties": { "next_cursor": { "type": "string", "nullable": true } } },
+      "CustomerPage": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/Customer" } },
+          "meta": { "$ref": "#/components/schemas/Meta" }
+        }
+      },
+      "Customer": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "created": { "type": "string", "format": "date-time" },
+          "phone": { "type": "string", "description": "Documented, never returned." }
+        }
+      },
+      "Invoice": {
+        "allOf": [
+          { "type": "object", "properties": { "id": { "type": "integer" }, "customer_id": { "type": "string" } } },
+          { "type": "object", "properties": { "total": { "type": "string", "description": "Documented as text; the API sends a number." }, "status": { "type": "string" }, "issued": { "type": "string", "format": "date" } } }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+DROP FUNCTION IF EXISTS user_for_federated_subject(uuid, text);
+DROP FUNCTION IF EXISTS link_federated_identity(uuid, uuid, uuid, text, text);
+DROP FUNCTION IF EXISTS create_sso_attempt(text, uuid, text, text, text, timestamptz);
+DROP FUNCTION IF EXISTS consume_sso_attempt(text);
+DROP FUNCTION IF EXISTS identity_provider_by_id(uuid);
+DROP FUNCTION IF EXISTS identity_provider_for_domain(text);
+DROP TABLE IF EXISTS sso_attempts;
+DROP TABLE IF EXISTS federated_identities;
+DROP TABLE IF EXISTS identity_provider_domains;
+DROP TABLE IF EXISTS identity_providers;

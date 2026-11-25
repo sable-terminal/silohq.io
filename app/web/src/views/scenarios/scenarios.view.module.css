@@ -1,0 +1,22 @@
+/* Scenarios (spec 39): runs, branches, the dependency graph and lead times. No style attributes (CSP). */
+
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.stackTight { display: flex; flex-direction: column; gap: 6px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rowEnd { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.muted { color: var(--text-muted); font-size: var(--text-sm); }
+.mono { font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.form { display: flex; flex-direction: column; gap: 14px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); gap: 12px; align-items: end; }
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 4px 12px; max-height: 280px; overflow: auto; }
+.fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin: 0; min-width: 0; }
+.fieldset > legend { padding: 0 4px; font-size: var(--text-sm); font-weight: var(--weight-strong); }
+.plainList { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cardHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cardHead > :first-child { flex: 1 1 auto; min-width: 0; }
+.path { font-size: var(--text-sm); overflow-wrap: anywhere; }
+.distribution { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin: 0; }
+.distribution div { display: flex; flex-direction: column; gap: 2px; }
+.distribution dt { color: var(--text-muted); font-size: var(--text-sm); }
+.distribution dd { margin: 0; font-variant-numeric: tabular-nums; }

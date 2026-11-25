@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1",
+  "identity": { "name": "Ledger", "provider": "Example", "version": "1.0.0" },
+  "transport": { "viaAgent": false, "baseUrl": "{baseUrl}" },
+  "protocol": { "kind": "rest" },
+  "auth": { "strategy": "bearer", "fields": [{ "name": "token", "kind": "secret", "label": "API token", "role": "token" }] },
+  "objects": [
+    {
+      "name": "customers", "identifier": ["id"],
+      "fields": [
+        { "name": "id", "type": "string" }, { "name": "name", "type": "string" }, { "name": "email", "type": "string" },
+        { "name": "country", "type": "string" }, { "name": "created", "type": "date-time" }
+      ],
+      "source": {
+        "kind": "rest", "request": { "method": "GET", "path": "/v2/customers" }, "records": { "jsonata": "data" },
+        "paging": { "next": { "cel": "has(response.body.meta.next_cursor) && response.body.meta.next_cursor != null ? {\"query\": {\"cursor\": response.body.meta.next_cursor}} : stop()" }, "maxPages": 100 }
+      }
+    },
+    {
+      "name": "invoices", "identifier": ["id"],
+      "fields": [
+        { "name": "id", "type": "integer" }, { "name": "customer_id", "type": "string" }, { "name": "total", "type": "number" },
+        { "name": "status", "type": "string" }, { "name": "issued", "type": "date" }
+      ],
+      "source": {
+        "kind": "rest", "request": { "method": "GET", "path": "/v2/invoices" }, "records": { "jsonata": "data" },
+        "paging": { "next": { "cel": "has(response.body.meta.next_cursor) && response.body.meta.next_cursor != null ? {\"query\": {\"cursor\": response.body.meta.next_cursor}} : stop()" }, "maxPages": 100 }
+      },
+      "pushdown": { "filters": [{ "field": "status", "ops": ["eq"], "patch": { "cel": "{\"query\": {\"status\": string(value)}}" } }] },
+      "relationships": [{ "field": "customer_id", "targetObject": "customers", "targetField": "id", "kind": "foreign_key" }]
+    }
+  ]
+}

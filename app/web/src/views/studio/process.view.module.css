@@ -1,0 +1,9 @@
+/* The process map (D234): an SVG drawn with classes, in the theme's tokens. */
+.map { margin: 0 0 var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: var(--space-2); }
+.svg { width: 100%; height: auto; max-height: 70vh; }
+.node { fill: var(--surface-raised); stroke: var(--border-strong); stroke-width: 1; }
+.nodeLabel { fill: var(--text); font: 600 11px var(--font-sans); }
+.nodeCount { fill: var(--text-muted); font: 400 10px var(--font-sans); }
+.edge { stroke: var(--text-muted); fill: none; }
+.edgeLabel { fill: var(--text-muted); font: 400 10px var(--font-sans); }
+.arrow { fill: var(--text-muted); }

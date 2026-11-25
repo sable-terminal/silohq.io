@@ -1,0 +1,53 @@
+/* A result in its three representations (spec 31). Marks are neutral; the accent marks only what is selected; an outlier is
+   marked with a sign and a word, and its colour is never the only thing that says so (31.6). Nothing animates. */
+
+.result { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-2); }
+.flags { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.prose { display: flex; flex-direction: column; gap: var(--space-2); max-width: 70ch; }
+.prose p { margin: 0; line-height: 1.5; }
+.lead { font-size: var(--text-md); }
+.muted { color: var(--text-muted); font-size: var(--text-sm); }
+.context { font-size: var(--text-sm); color: var(--text-muted); }
+.context summary { cursor: pointer; }
+.context ul { margin: var(--space-2) 0 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
+
+.figure { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.caption { color: var(--text-muted); font-size: var(--text-sm); }
+.svg { width: 100%; height: auto; max-width: 760px; overflow: visible; }
+.mark { fill: var(--text-muted); }
+.markAlt { fill: var(--border-strong); }
+.markOn { fill: var(--accent); }
+.line { fill: none; stroke: var(--text-muted); stroke-width: 2; }
+.axis { stroke: var(--border-strong); stroke-width: 1; }
+.label { fill: var(--text-muted); font: 400 11px var(--font-sans); }
+.number { fill: var(--text); font: 400 11px var(--font-mono); }
+.edge { stroke: var(--border-strong); stroke-width: 1.5; }
+.edgeBack { stroke: var(--border-strong); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.arrow { fill: var(--border-strong); }
+.outlier { fill: var(--warn); font: 700 12px var(--font-sans); }
+.outlierOn { fill: var(--accent); font: 700 14px var(--font-sans); }
+.element { cursor: pointer; outline: none; }
+.element:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.element:focus-visible circle, .element:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
+
+.single { margin: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.singleValue { margin: 0; font: var(--weight-strong) 2rem/1.1 var(--font-mono); }
+
+.parts { margin: 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
+.partOn { font-weight: var(--weight-strong); }
+.numeric { font-family: var(--font-mono); color: var(--text-muted); }
+.outliers { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
+
+.compare { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
+.compare th, .compare td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border); }
+.rowOn { background: var(--selection); }
+.rowButton { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
+.rowButton:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.selection { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); background: var(--surface); }
+.selectionHead { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.sources { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
+.moves { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pager { display: flex; align-items: center; gap: var(--space-2); }
+.open { font-size: var(--text-sm); }

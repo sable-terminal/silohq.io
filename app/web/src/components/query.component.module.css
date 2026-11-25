@@ -1,0 +1,17 @@
+.stale {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.staleNote {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}

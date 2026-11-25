@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1",
+  "identity": { "name": "Tasks", "provider": "Example", "version": "1.0.0" },
+  "transport": { "viaAgent": false, "baseUrl": "{baseUrl}" },
+  "protocol": { "kind": "rest" },
+  "auth": { "strategy": "api_key", "fields": [{ "name": "api_key", "kind": "secret", "label": "API key", "role": "api_key", "location": "header", "key": "X-Api-Key" }] },
+  "objects": [
+    {
+      "name": "projects", "identifier": ["id"],
+      "fields": [{ "name": "id", "type": "integer" }, { "name": "name", "type": "string" }, { "name": "archived", "type": "boolean" }],
+      "source": {
+        "kind": "rest", "request": { "method": "GET", "path": "/api/projects", "query": { "per_page": "3" } }, "records": { "jsonata": "items" },
+        "paging": { "next": { "cel": "response.body.page < response.body.total_pages ? {\"query\": {\"page\": string(int(response.body.page) + 1)}} : stop()" }, "maxPages": 100 }
+      }
+    },
+    {
+      "name": "tasks", "identifier": ["id"],
+      "fields": [
+        { "name": "id", "type": "integer" }, { "name": "project_id", "type": "integer" }, { "name": "title", "type": "string" },
+        { "name": "done", "type": "boolean" }, { "name": "due", "type": "date" }
+      ],
+      "source": {
+        "kind": "rest", "request": { "method": "GET", "path": "/api/tasks", "query": { "per_page": "3" } }, "records": { "jsonata": "items" },
+        "paging": { "next": { "cel": "response.body.page < response.body.total_pages ? {\"query\": {\"page\": string(int(response.body.page) + 1)}} : stop()" }, "maxPages": 100 }
+      },
+      "relationships": [{ "field": "project_id", "targetObject": "projects", "targetField": "id", "kind": "foreign_key" }]
+    }
+  ]
+}

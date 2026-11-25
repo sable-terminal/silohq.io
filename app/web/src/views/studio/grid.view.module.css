@@ -1,0 +1,284 @@
+/* An app page's 12-column grid (spec 35.2): a widget's column, row and spans as classes, since pages carry no style attributes (CSP).
+   Generated for the definition's bounds: columns 1-12, rows 1-200, column spans 1-12, row spans 1-50. At narrow widths the grid
+   reflows to one column in definition order. */
+
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(48px, auto); gap: var(--space-3); }
+.cell { min-width: 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); overflow: auto; }
+.c1 { grid-column-start: 1; }
+.c2 { grid-column-start: 2; }
+.c3 { grid-column-start: 3; }
+.c4 { grid-column-start: 4; }
+.c5 { grid-column-start: 5; }
+.c6 { grid-column-start: 6; }
+.c7 { grid-column-start: 7; }
+.c8 { grid-column-start: 8; }
+.c9 { grid-column-start: 9; }
+.c10 { grid-column-start: 10; }
+.c11 { grid-column-start: 11; }
+.c12 { grid-column-start: 12; }
+.w1 { grid-column-end: span 1; }
+.w2 { grid-column-end: span 2; }
+.w3 { grid-column-end: span 3; }
+.w4 { grid-column-end: span 4; }
+.w5 { grid-column-end: span 5; }
+.w6 { grid-column-end: span 6; }
+.w7 { grid-column-end: span 7; }
+.w8 { grid-column-end: span 8; }
+.w9 { grid-column-end: span 9; }
+.w10 { grid-column-end: span 10; }
+.w11 { grid-column-end: span 11; }
+.w12 { grid-column-end: span 12; }
+.r1 { grid-row-start: 1; }
+.r2 { grid-row-start: 2; }
+.r3 { grid-row-start: 3; }
+.r4 { grid-row-start: 4; }
+.r5 { grid-row-start: 5; }
+.r6 { grid-row-start: 6; }
+.r7 { grid-row-start: 7; }
+.r8 { grid-row-start: 8; }
+.r9 { grid-row-start: 9; }
+.r10 { grid-row-start: 10; }
+.r11 { grid-row-start: 11; }
+.r12 { grid-row-start: 12; }
+.r13 { grid-row-start: 13; }
+.r14 { grid-row-start: 14; }
+.r15 { grid-row-start: 15; }
+.r16 { grid-row-start: 16; }
+.r17 { grid-row-start: 17; }
+.r18 { grid-row-start: 18; }
+.r19 { grid-row-start: 19; }
+.r20 { grid-row-start: 20; }
+.r21 { grid-row-start: 21; }
+.r22 { grid-row-start: 22; }
+.r23 { grid-row-start: 23; }
+.r24 { grid-row-start: 24; }
+.r25 { grid-row-start: 25; }
+.r26 { grid-row-start: 26; }
+.r27 { grid-row-start: 27; }
+.r28 { grid-row-start: 28; }
+.r29 { grid-row-start: 29; }
+.r30 { grid-row-start: 30; }
+.r31 { grid-row-start: 31; }
+.r32 { grid-row-start: 32; }
+.r33 { grid-row-start: 33; }
+.r34 { grid-row-start: 34; }
+.r35 { grid-row-start: 35; }
+.r36 { grid-row-start: 36; }
+.r37 { grid-row-start: 37; }
+.r38 { grid-row-start: 38; }
+.r39 { grid-row-start: 39; }
+.r40 { grid-row-start: 40; }
+.r41 { grid-row-start: 41; }
+.r42 { grid-row-start: 42; }
+.r43 { grid-row-start: 43; }
+.r44 { grid-row-start: 44; }
+.r45 { grid-row-start: 45; }
+.r46 { grid-row-start: 46; }
+.r47 { grid-row-start: 47; }
+.r48 { grid-row-start: 48; }
+.r49 { grid-row-start: 49; }
+.r50 { grid-row-start: 50; }
+.r51 { grid-row-start: 51; }
+.r52 { grid-row-start: 52; }
+.r53 { grid-row-start: 53; }
+.r54 { grid-row-start: 54; }
+.r55 { grid-row-start: 55; }
+.r56 { grid-row-start: 56; }
+.r57 { grid-row-start: 57; }
+.r58 { grid-row-start: 58; }
+.r59 { grid-row-start: 59; }
+.r60 { grid-row-start: 60; }
+.r61 { grid-row-start: 61; }
+.r62 { grid-row-start: 62; }
+.r63 { grid-row-start: 63; }
+.r64 { grid-row-start: 64; }
+.r65 { grid-row-start: 65; }
+.r66 { grid-row-start: 66; }
+.r67 { grid-row-start: 67; }
+.r68 { grid-row-start: 68; }
+.r69 { grid-row-start: 69; }
+.r70 { grid-row-start: 70; }
+.r71 { grid-row-start: 71; }
+.r72 { grid-row-start: 72; }
+.r73 { grid-row-start: 73; }
+.r74 { grid-row-start: 74; }
+.r75 { grid-row-start: 75; }
+.r76 { grid-row-start: 76; }
+.r77 { grid-row-start: 77; }
+.r78 { grid-row-start: 78; }
+.r79 { grid-row-start: 79; }
+.r80 { grid-row-start: 80; }
+.r81 { grid-row-start: 81; }
+.r82 { grid-row-start: 82; }
+.r83 { grid-row-start: 83; }
+.r84 { grid-row-start: 84; }
+.r85 { grid-row-start: 85; }
+.r86 { grid-row-start: 86; }
+.r87 { grid-row-start: 87; }
+.r88 { grid-row-start: 88; }
+.r89 { grid-row-start: 89; }
+.r90 { grid-row-start: 90; }
+.r91 { grid-row-start: 91; }
+.r92 { grid-row-start: 92; }
+.r93 { grid-row-start: 93; }
+.r94 { grid-row-start: 94; }
+.r95 { grid-row-start: 95; }
+.r96 { grid-row-start: 96; }
+.r97 { grid-row-start: 97; }
+.r98 { grid-row-start: 98; }
+.r99 { grid-row-start: 99; }
+.r100 { grid-row-start: 100; }
+.r101 { grid-row-start: 101; }
+.r102 { grid-row-start: 102; }
+.r103 { grid-row-start: 103; }
+.r104 { grid-row-start: 104; }
+.r105 { grid-row-start: 105; }
+.r106 { grid-row-start: 106; }
+.r107 { grid-row-start: 107; }
+.r108 { grid-row-start: 108; }
+.r109 { grid-row-start: 109; }
+.r110 { grid-row-start: 110; }
+.r111 { grid-row-start: 111; }
+.r112 { grid-row-start: 112; }
+.r113 { grid-row-start: 113; }
+.r114 { grid-row-start: 114; }
+.r115 { grid-row-start: 115; }
+.r116 { grid-row-start: 116; }
+.r117 { grid-row-start: 117; }
+.r118 { grid-row-start: 118; }
+.r119 { grid-row-start: 119; }
+.r120 { grid-row-start: 120; }
+.r121 { grid-row-start: 121; }
+.r122 { grid-row-start: 122; }
+.r123 { grid-row-start: 123; }
+.r124 { grid-row-start: 124; }
+.r125 { grid-row-start: 125; }
+.r126 { grid-row-start: 126; }
+.r127 { grid-row-start: 127; }
+.r128 { grid-row-start: 128; }
+.r129 { grid-row-start: 129; }
+.r130 { grid-row-start: 130; }
+.r131 { grid-row-start: 131; }
+.r132 { grid-row-start: 132; }
+.r133 { grid-row-start: 133; }
+.r134 { grid-row-start: 134; }
+.r135 { grid-row-start: 135; }
+.r136 { grid-row-start: 136; }
+.r137 { grid-row-start: 137; }
+.r138 { grid-row-start: 138; }
+.r139 { grid-row-start: 139; }
+.r140 { grid-row-start: 140; }
+.r141 { grid-row-start: 141; }
+.r142 { grid-row-start: 142; }
+.r143 { grid-row-start: 143; }
+.r144 { grid-row-start: 144; }
+.r145 { grid-row-start: 145; }
+.r146 { grid-row-start: 146; }
+.r147 { grid-row-start: 147; }
+.r148 { grid-row-start: 148; }
+.r149 { grid-row-start: 149; }
+.r150 { grid-row-start: 150; }
+.r151 { grid-row-start: 151; }
+.r152 { grid-row-start: 152; }
+.r153 { grid-row-start: 153; }
+.r154 { grid-row-start: 154; }
+.r155 { grid-row-start: 155; }
+.r156 { grid-row-start: 156; }
+.r157 { grid-row-start: 157; }
+.r158 { grid-row-start: 158; }
+.r159 { grid-row-start: 159; }
+.r160 { grid-row-start: 160; }
+.r161 { grid-row-start: 161; }
+.r162 { grid-row-start: 162; }
+.r163 { grid-row-start: 163; }
+.r164 { grid-row-start: 164; }
+.r165 { grid-row-start: 165; }
+.r166 { grid-row-start: 166; }
+.r167 { grid-row-start: 167; }
+.r168 { grid-row-start: 168; }
+.r169 { grid-row-start: 169; }
+.r170 { grid-row-start: 170; }
+.r171 { grid-row-start: 171; }
+.r172 { grid-row-start: 172; }
+.r173 { grid-row-start: 173; }
+.r174 { grid-row-start: 174; }
+.r175 { grid-row-start: 175; }
+.r176 { grid-row-start: 176; }
+.r177 { grid-row-start: 177; }
+.r178 { grid-row-start: 178; }
+.r179 { grid-row-start: 179; }
+.r180 { grid-row-start: 180; }
+.r181 { grid-row-start: 181; }
+.r182 { grid-row-start: 182; }
+.r183 { grid-row-start: 183; }
+.r184 { grid-row-start: 184; }
+.r185 { grid-row-start: 185; }
+.r186 { grid-row-start: 186; }
+.r187 { grid-row-start: 187; }
+.r188 { grid-row-start: 188; }
+.r189 { grid-row-start: 189; }
+.r190 { grid-row-start: 190; }
+.r191 { grid-row-start: 191; }
+.r192 { grid-row-start: 192; }
+.r193 { grid-row-start: 193; }
+.r194 { grid-row-start: 194; }
+.r195 { grid-row-start: 195; }
+.r196 { grid-row-start: 196; }
+.r197 { grid-row-start: 197; }
+.r198 { grid-row-start: 198; }
+.r199 { grid-row-start: 199; }
+.r200 { grid-row-start: 200; }
+.h1 { grid-row-end: span 1; }
+.h2 { grid-row-end: span 2; }
+.h3 { grid-row-end: span 3; }
+.h4 { grid-row-end: span 4; }
+.h5 { grid-row-end: span 5; }
+.h6 { grid-row-end: span 6; }
+.h7 { grid-row-end: span 7; }
+.h8 { grid-row-end: span 8; }
+.h9 { grid-row-end: span 9; }
+.h10 { grid-row-end: span 10; }
+.h11 { grid-row-end: span 11; }
+.h12 { grid-row-end: span 12; }
+.h13 { grid-row-end: span 13; }
+.h14 { grid-row-end: span 14; }
+.h15 { grid-row-end: span 15; }
+.h16 { grid-row-end: span 16; }
+.h17 { grid-row-end: span 17; }
+.h18 { grid-row-end: span 18; }
+.h19 { grid-row-end: span 19; }
+.h20 { grid-row-end: span 20; }
+.h21 { grid-row-end: span 21; }
+.h22 { grid-row-end: span 22; }
+.h23 { grid-row-end: span 23; }
+.h24 { grid-row-end: span 24; }
+.h25 { grid-row-end: span 25; }
+.h26 { grid-row-end: span 26; }
+.h27 { grid-row-end: span 27; }
+.h28 { grid-row-end: span 28; }
+.h29 { grid-row-end: span 29; }
+.h30 { grid-row-end: span 30; }
+.h31 { grid-row-end: span 31; }
+.h32 { grid-row-end: span 32; }
+.h33 { grid-row-end: span 33; }
+.h34 { grid-row-end: span 34; }
+.h35 { grid-row-end: span 35; }
+.h36 { grid-row-end: span 36; }
+.h37 { grid-row-end: span 37; }
+.h38 { grid-row-end: span 38; }
+.h39 { grid-row-end: span 39; }
+.h40 { grid-row-end: span 40; }
+.h41 { grid-row-end: span 41; }
+.h42 { grid-row-end: span 42; }
+.h43 { grid-row-end: span 43; }
+.h44 { grid-row-end: span 44; }
+.h45 { grid-row-end: span 45; }
+.h46 { grid-row-end: span 46; }
+.h47 { grid-row-end: span 47; }
+.h48 { grid-row-end: span 48; }
+.h49 { grid-row-end: span 49; }
+.h50 { grid-row-end: span 50; }
+@media (max-width: 760px) {
+  .grid { grid-template-columns: 1fr; }
+  .grid > .cell { grid-column: auto; grid-row: auto; }
+}

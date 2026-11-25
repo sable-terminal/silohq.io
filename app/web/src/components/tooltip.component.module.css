@@ -1,0 +1,15 @@
+.tip {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  max-width: 320px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: var(--marking-bg);
+  color: var(--marking-text);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  pointer-events: none;
+  overflow: visible;
+}

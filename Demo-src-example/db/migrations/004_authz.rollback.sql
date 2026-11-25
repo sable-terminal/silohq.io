@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS concept_markings;
+DROP TABLE IF EXISTS resource_markings;
+DROP TABLE IF EXISTS clearances;
+DROP TABLE IF EXISTS markings;
+DROP TABLE IF EXISTS role_assignments;
+DROP TABLE IF EXISTS role_grantable_roles;
+DROP TABLE IF EXISTS role_permissions;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS permissions;

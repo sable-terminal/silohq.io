@@ -1,0 +1,266 @@
+/*
+ * Design tokens (spec 29.9, 33): light and dark themes, each colour pair meeting WCAG 2.2 AA
+ * (text 4.5:1, large text and controls 3:1) on the surfaces it is used on; colour is never
+ * the only signal. The system font stack only: nothing is fetched from outside the cell.
+ * The theme follows the device unless the person chose one (data-theme on <html>).
+ */
+
+:root {
+  color-scheme: light;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef0f3;
+  --text: #1b1f24;            /* 16.6:1 on --bg, 14.5:1 on --surface-sunken */
+  --text-muted: #555e69;      /* 6.6:1 on --bg, 5.7:1 on --surface-sunken */
+  --border: #c9d1d9;
+  --border-strong: #7d8590;   /* 3.7:1 on --bg, 3.2:1 on --surface-sunken: control outlines */
+  --accent: #0b5cad;          /* 6.7:1 on --bg, 5.8:1 on --surface-sunken */
+  --accent-hover: #084a8c;
+  --accent-text: #ffffff;     /* 6.7:1 on --accent */
+  --accent-soft: #e6f0fa;
+  --focus: #0b5cad;
+  --ok: #187233;              /* 6.0:1 on --bg, 5.3:1 on --surface-sunken */
+  --warn: #8a5300;            /* 6.3:1 on --bg, 5.5:1 on --surface-sunken */
+  --danger: #b42318;          /* 6.6:1 on --bg, 5.7:1 on --surface-sunken */
+  --danger-soft: #fdecea;
+  --danger-text: #ffffff;     /* 6.6:1 on --danger */
+  --info: #0b5cad;
+  --marking-bg: #1b1f24;
+  --marking-text: #ffffff;
+  --ok-soft: #e7f4ea;         /* --ok 5.3:1, --text 14.6:1 */
+  --warn-soft: #fbf1df;       /* --warn 5.7:1, --text 14.8:1 */
+  --info-soft: #e6f0fa;
+  --selection: #cfe2f7;
+  --backdrop: rgb(15 20 26 / 0.45);
+
+  /* The sidebar is dark in both themes, as an operating console's is. */
+  --nav-bg: #15191f;
+  --nav-hover: #222831;
+  --nav-active: #2b3542;
+  --nav-text: #eef2f6;        /* 11.0:1 or better on every nav fill */
+  --nav-muted: #a9b2bd;       /* 5.8:1 or better */
+  --nav-accent: #6cb0ff;      /* 5.5:1 or better */
+  --nav-border: #2c333c;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --weight-medium: 500;
+  --weight-strong: 600;
+
+  --z-sticky: 10;
+  --z-header: 20;
+  --z-popover: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
+
+  --header-height: 48px;
+  --sidebar-width: 248px;
+  --sidebar-collapsed: 56px;
+  --ask-collapsed: 40px;
+  --content-max: 1280px;
+
+  --radius: 6px;
+  --radius-small: 4px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 12px rgb(0 0 0 / 0.06);
+  --rail-width: 220px;
+  --rail-collapsed: 56px;
+  --topbar-height: 52px;
+  --statusline-height: 28px;
+  --ask-width: 360px;
+  --transition: 120ms ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e1116;
+    --surface: #161b22;
+    --surface-raised: #1c2128;
+    --surface-sunken: #0a0d12;
+    --text: #e6edf3;          /* 16.0:1 on --bg, 13.7:1 on --surface-raised */
+    --text-muted: #a2acb7;    /* 8.2:1 on --bg, 7.0:1 on --surface-raised */
+    --border: #30363d;
+    --border-strong: #6e7681; /* 4.1:1 on --bg, 3.3:1 on --accent-soft */
+    --accent: #5ca4ff;        /* 7.4:1 on --bg, 6.3:1 on --surface-raised */
+    --accent-hover: #82b9ff;
+    --accent-text: #0e1116;   /* 7.4:1 on --accent */
+    --accent-soft: #14273d;
+    --focus: #5ca4ff;
+    --ok: #4ac26b;
+    --warn: #e3b341;
+    --danger: #ff7b72;
+    --danger-soft: #3a1714;
+    --danger-text: #0e1116;   /* 7.5:1 on --danger */
+    --info: #5ca4ff;
+    --marking-bg: #e6edf3;
+    --marking-text: #0e1116;
+    --ok-soft: #12261a;
+    --warn-soft: #2b2111;
+    --info-soft: #14273d;
+    --selection: #1f3a5c;
+    --backdrop: rgb(0 0 0 / 0.6);
+    --nav-bg: #090c10;
+    --nav-hover: #161b22;
+    --nav-active: #1f2a38;
+    --nav-text: #e6edf3;
+    --nav-muted: #a2acb7;
+    --nav-accent: #5ca4ff;
+    --nav-border: #21262d;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 12px rgb(0 0 0 / 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1116;
+  --surface: #161b22;
+  --surface-raised: #1c2128;
+  --surface-sunken: #0a0d12;
+  --text: #e6edf3;
+  --text-muted: #a2acb7;
+  --border: #30363d;
+  --border-strong: #6e7681;
+  --accent: #5ca4ff;
+  --accent-hover: #82b9ff;
+  --accent-text: #0e1116;
+  --accent-soft: #14273d;
+  --focus: #5ca4ff;
+  --ok: #4ac26b;
+  --warn: #e3b341;
+  --danger: #ff7b72;
+  --danger-soft: #3a1714;
+  --danger-text: #0e1116;
+  --info: #5ca4ff;
+  --marking-bg: #e6edf3;
+  --marking-text: #0e1116;
+  --ok-soft: #12261a;
+  --warn-soft: #2b2111;
+  --info-soft: #14273d;
+  --selection: #1f3a5c;
+  --backdrop: rgb(0 0 0 / 0.6);
+  --nav-bg: #090c10;
+  --nav-hover: #161b22;
+  --nav-active: #1f2a38;
+  --nav-text: #e6edf3;
+  --nav-muted: #a2acb7;
+  --nav-accent: #5ca4ff;
+  --nav-border: #21262d;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 12px rgb(0 0 0 / 0.4);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+}
+
+::selection {
+  background: var(--selection);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: var(--weight-strong);
+  line-height: 1.3;
+}
+
+p {
+  margin: 0;
+}
+
+code,
+kbd,
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: -100px;
+  z-index: 100;
+  padding: var(--space-2) var(--space-3);
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: var(--radius);
+}
+
+.skip-link:focus {
+  top: var(--space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

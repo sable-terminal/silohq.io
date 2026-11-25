@@ -1,0 +1,19 @@
+/* The analysis builder (spec 37.8): steps in order, each with what it reads, its editor and its output. */
+
+.stack { display: flex; flex-direction: column; gap: var(--space-4); }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.step { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.stepRefused { border-color: var(--warn); }
+.stepHead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+.stepTitle { margin: 0; font-size: var(--text-md); font-weight: var(--weight-strong); }
+.position { color: var(--text-muted); font-family: var(--font-mono); margin-right: var(--space-2); }
+.words { color: var(--text-muted); font-size: var(--text-sm); }
+.editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.conditions { display: flex; flex-direction: column; gap: var(--space-2); }
+.condition { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.checks { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.output { border-top: 1px solid var(--border); padding-top: var(--space-3); min-width: 0; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-3); }
+.muted { color: var(--text-muted); font-size: var(--text-sm); }
+.bar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.start { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }

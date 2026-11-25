@@ -1,0 +1,154 @@
+.muted {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.warn {
+  color: var(--warn);
+  font-size: var(--text-sm);
+}
+
+.sectionNav {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  font-size: var(--text-sm);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-margin-top: 48px;
+}
+
+.blockTitle {
+  font-size: var(--text-lg);
+}
+
+.tableWrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.properties,
+.diff {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-sm);
+}
+
+.properties thead th,
+.diff thead th {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  text-align: left;
+}
+
+.properties tbody th,
+.properties tbody td,
+.diff tbody th,
+.diff tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: normal;
+  text-align: left;
+  vertical-align: top;
+}
+
+.properties tbody th {
+  width: 26%;
+  font-weight: var(--weight-medium);
+}
+
+.source {
+  width: 30%;
+  color: var(--text-muted);
+}
+
+.disputed {
+  background: var(--warn-soft);
+}
+
+.dispute {
+  color: var(--warn);
+}
+
+.readings {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.links,
+.list,
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.linked {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.actionItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.actionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.actionForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 560px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--text-sm);
+}
+
+.panelStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

@@ -1,0 +1,19 @@
+.who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name {
+  font-weight: var(--weight-strong);
+}
+
+.detail {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.avatar {
+  border-radius: 50% !important;
+  background: var(--surface-sunken) !important;
+}

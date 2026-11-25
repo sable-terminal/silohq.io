@@ -1,0 +1,211 @@
+# Local development and test infrastructure. Every port is bound to 127.0.0.1 and every
+# password is for local use only.
+#
+# db         Postgres 16 with pgvector, the cell engine (database README). npm run db:up
+# pgbouncer  The transaction-mode pooler services connect through (spec 8.2).
+# redis      One Redis standing in for redis-session, redis-data and redis-state, with
+#            persistence off as spec 8.3 requires.                     npm run infra:up
+# nats       NATS with JetStream: bus-live and the self-managed bus-durable (spec 9.1).
+# mqtt       NATS with its MQTT listener, the broker the agent's MQTT plugin is tested against (20.2).
+# vault      Vault in dev mode: the key provider for development only. Production uses
+#            Cloud KMS (commercial) or the UK HSM (sovereign); vault/credential.policy.hcl.
+# s3         SeaweedFS: an S3-compatible object store for self-managed installs.
+# pubsub     The Pub/Sub emulator: the commercial cell's bus-durable.
+# gcs        fake-gcs-server: the commercial cell's Cloud Storage.
+#            Cloud KMS has no emulator; its tests run in CI on main only.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    # The whole-schema migration takes thousands of locks in one transaction; room for
+    # several test databases migrating at once. Logical replication, for the Silo Agent's
+    # change capture tests (spec 10.4: a customer's Postgres publishes through pgoutput).
+    # A slot a killed test leaves behind keeps every byte of WAL after it: capped at 2 GB,
+    # past which the slot is lost rather than the disk filled (it once held 26 GB).
+    command: ["postgres", "-c", "max_locks_per_transaction=1024", "-c", "wal_level=logical", "-c", "max_replication_slots=20", "-c", "max_wal_senders=20", "-c", "max_slot_wal_keep_size=2GB"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - silo-pg:/var/lib/postgresql/data
+
+  # The transaction-mode pooler services connect through (spec 8.2). Each client logs in
+  # as its own role, checked by auth_query, so row-level security sees the service, not
+  # the pooler. Migrations bypass it and use db directly.
+  pgbouncer:
+    image: edoburu/pgbouncer@sha256:8638aa563607256d3c7440437534195f1066a92b68015d89ae9d6b935b444a6d # PgBouncer 1.26.1
+    environment:
+      DB_HOST: db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      AUTH_TYPE: scram-sha-256
+      AUTH_USER: postgres
+      AUTH_QUERY: SELECT usename, passwd FROM pg_shadow WHERE usename=$$1
+      POOL_MODE: transaction
+      LISTEN_PORT: "6432"
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "10"
+      MAX_PREPARED_STATEMENTS: "0"
+      # Backstops behind the per-transaction timeouts the services set.
+      QUERY_TIMEOUT: "60"
+      IDLE_TRANSACTION_TIMEOUT: "30"
+    ports:
+      - "127.0.0.1:56432:6432"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 6432"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    # noeviction: a full instance refuses writes rather than silently dropping live state,
+    # locks or idempotency keys (design: Redis keyspaces).
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--repl-diskless-sync", "yes",
+      "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "127.0.0.1:54222:4222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8222/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # MQTT for the agent's industrial plugin (spec 20.2): NATS with its MQTT listener (nats/mqtt.conf).
+  mqtt:
+    image: nats:2.10-alpine
+    command: ["-c", "/etc/nats/mqtt.conf", "-m", "8222"]
+    volumes:
+      - ./nats/mqtt.conf:/etc/nats/mqtt.conf:ro
+    ports:
+      - "127.0.0.1:51883:1883"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8222/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  vault:
+    image: hashicorp/vault:1.17
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "127.0.0.1:58200:8200"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8200/v1/sys/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  s3:
+    image: chrislusf/seaweedfs:4.50
+    # Every test makes its own bucket, and each takes volumes: small volumes, as many as the
+    # disk holds, or a long-lived container runs out ("No writable volumes").
+    command: ["server", "-s3", "-dir=/data", "-volume.max=0", "-master.volumeSizeLimitMB=64"]
+    ports:
+      - "127.0.0.1:58333:8333"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/ || wget -q -S -O /dev/null http://127.0.0.1:8333/ 2>&1 | grep -q 'HTTP/'"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  # Topics and subscriptions are provisioned by the tests, as the cell template would.
+  pubsub:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli@sha256:112c21f8f6e04b03b393b3c34fb943a1f443e839f18c6492c364ac2e6c3ff935 # emulators, SDK 591.0.0
+    command: ["gcloud", "beta", "emulators", "pubsub", "start", "--host-port=0.0.0.0:8085", "--project=silo-local"]
+    ports:
+      - "127.0.0.1:58085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8085/"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  gcs:
+    image: fsouza/fake-gcs-server@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef # 1.56.1
+    command: ["-scheme", "http", "-port", "4443", "-backend", "memory",
+      "-public-host", "127.0.0.1:54443", "-external-url", "http://127.0.0.1:54443"]
+    ports:
+      - "127.0.0.1:54443:4443"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4443/storage/v1/b"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Customer databases the Silo Agent reaches (its other dialects), for the agent's tests only:
+  # started on request (npm run sources:up), never with the rest. Change data capture reads the
+  # binary log, so it is on, row by row.
+  mysql:
+    profiles: ["sources"]
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: local
+    command: ["--log-bin=mysql-bin", "--binlog-format=ROW", "--server-id=1", "--gtid-mode=ON", "--enforce-gtid-consistency=ON",
+      "--binlog-expire-logs-seconds=86400", "--binlog-row-metadata=FULL"]
+    ports:
+      - "127.0.0.1:53306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-plocal"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  # SQL Server has no arm64 image: on an Apple silicon Mac it runs under Docker's x86 emulation.
+  mssql:
+    profiles: ["sources"]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: Local-Passw0rd!
+    ports:
+      - "127.0.0.1:51433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Local-Passw0rd!' -Q 'select 1' -b -o /dev/null"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+
+  # Oracle Database 23ai Free (arm64 and x86), its pluggable database FREEPDB1.
+  oracle:
+    profiles: ["sources"]
+    image: gvenzl/oracle-free:23-slim-faststart
+    environment:
+      ORACLE_PASSWORD: local
+    ports:
+      - "127.0.0.1:51521:1521"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 3s
+      timeout: 10s
+      retries: 100
+
+volumes:
+  silo-pg:

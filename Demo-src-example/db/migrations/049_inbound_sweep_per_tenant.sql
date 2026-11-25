@@ -1,0 +1,23 @@
+-- 049_inbound_sweep_per_tenant — the sweep that counted everybody's events.
+--
+-- 025 created `sweep_inbound_events()` as a deliberate, narrow hole in row level
+-- security: no arguments, no reads, and it can only delete rows that have already
+-- expired. That reasoning holds for a job with no tenant. It did not hold for how
+-- the function was actually reached.
+--
+-- `POST /connections/maintenance/sweep-inbound` sits on the session-scoped router
+-- behind `connection.create`, and returned the function's total verbatim. So a
+-- member of one organisation got back a count of expired webhook and email events
+-- belonging to EVERY organisation on the cell — and two calls a minute apart
+-- differenced into a coarse activity signal for other customers.
+--
+-- The endpoint now deletes under the caller's tenant context, where the
+-- `inbound_events_tenant` policy bounds both the delete and the count. Nothing in
+-- the application calls the cell-wide function any more, so the application role
+-- does not need to be able to call it.
+--
+-- THE FUNCTION STAYS. A cell-wide reclaim is a real operational need — it is just
+-- not a request. It remains callable by its owner, which is the migration role,
+-- the way any other maintenance statement is.
+
+REVOKE EXECUTE ON FUNCTION sweep_inbound_events() FROM silo_app;
